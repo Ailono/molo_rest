@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 const basicAuth = require('basic-auth');
 const Database = require('better-sqlite3');
 const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,17 +44,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS dishes (
  * Данные вносятся вручную через админ-панель.
  */
 
-// Multer — загрузка фото блюд в public/images/
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, IMAGES_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const name = Date.now() + '-' + Math.round(Math.random() * 1e6) + ext;
-    cb(null, name);
-  }
+// Cloudinary config
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'duguck3az',
+  api_key: process.env.CLOUDINARY_API_KEY || '836386742967499',
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+// Multer — временное хранение в памяти перед отправкой в Cloudinary
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/image\/(jpeg|png|webp|gif)/.test(file.mimetype)) cb(null, true);
@@ -81,10 +81,17 @@ function adminAuth(req, res, next) {
   return next();
 }
 
-// API: upload dish image (admin only)
+// API: upload dish image (admin only) → Cloudinary
 app.post('/api/upload', adminAuth, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-  res.json({ url: `/images/${req.file.filename}` });
+  const stream = cloudinary.uploader.upload_stream(
+    { folder: 'molo-menu', resource_type: 'image' },
+    (error, result) => {
+      if (error) return res.status(500).json({ error: 'Ошибка загрузки в Cloudinary' });
+      res.json({ url: result.secure_url });
+    }
+  );
+  stream.end(req.file.buffer);
 });
 
 // API: get all categories
