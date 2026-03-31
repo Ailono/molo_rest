@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const bodyParser = require('body-parser');
 const basicAuth = require('basic-auth');
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,41 +20,27 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // Initialize SQLite connection
-const db = new sqlite3.Database(DB_PATH);
+const db = new Database(DB_PATH);
 
 // Create tables if not exist
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    sort_order INTEGER NOT NULL DEFAULT 0
-  )`);
+db.exec(`CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0
+)`);
 
-  db.run(
-    `CREATE TABLE IF NOT EXISTS dishes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      category TEXT NOT NULL,
-      name TEXT NOT NULL,
-      price REAL NOT NULL,
-      image TEXT
-    )`,
-    (err) => {
-      if (err) {
-        console.error('Ошибка создания таблицы dishes:', err);
-      } else {
-        seedIfNeeded();
-      }
-    }
-  );
-});
+db.exec(`CREATE TABLE IF NOT EXISTS dishes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category TEXT NOT NULL,
+  name TEXT NOT NULL,
+  price REAL NOT NULL,
+  image TEXT
+)`);
 
 /**
  * Автозаполнение из Excel отключено.
  * Данные вносятся вручную через админ-панель.
  */
-function seedIfNeeded() {
-  // seed отключён — меню заполняется через /admin
-}
 
 // Middleware
 app.use(bodyParser.json());
@@ -82,49 +68,44 @@ function adminAuth(req, res, next) {
 
 // API: get all categories
 app.get('/api/categories', (req, res) => {
-  db.all('SELECT * FROM categories ORDER BY sort_order, name', (err, rows) => {
-    if (err) return res.status(500).json({ error: 'Ошибка получения категорий' });
+  try {
+    const rows = db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all();
     res.json(rows);
-  });
+  } catch (e) { res.status(500).json({ error: 'Ошибка получения категорий' }); }
 });
 
 // API: create category (admin only)
 app.post('/api/categories', adminAuth, (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Укажите название категории' });
-  db.get('SELECT MAX(sort_order) as m FROM categories', (err, row) => {
+  try {
+    const row = db.prepare('SELECT MAX(sort_order) as m FROM categories').get();
     const nextOrder = (row && row.m != null ? row.m : -1) + 1;
-    db.run('INSERT INTO categories (name, sort_order) VALUES (?, ?)', [name.trim(), nextOrder], function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Категория уже существует' });
-        return res.status(500).json({ error: 'Ошибка создания категории' });
-      }
-      res.status(201).json({ id: this.lastID, name: name.trim(), sort_order: nextOrder });
-    });
-  });
+    const result = db.prepare('INSERT INTO categories (name, sort_order) VALUES (?, ?)').run(name.trim(), nextOrder);
+    res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), sort_order: nextOrder });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Категория уже существует' });
+    res.status(500).json({ error: 'Ошибка создания категории' });
+  }
 });
 
 // API: delete category (admin only)
 app.delete('/api/categories/:id', adminAuth, (req, res) => {
   const { id } = req.params;
-  db.get('SELECT name FROM categories WHERE id = ?', [id], (err, row) => {
+  try {
+    const row = db.prepare('SELECT name FROM categories WHERE id = ?').get(id);
     if (!row) return res.status(404).json({ error: 'Категория не найдена' });
-    db.run('DELETE FROM categories WHERE id = ?', [id], function(err) {
-      if (err) return res.status(500).json({ error: 'Ошибка удаления категории' });
-      res.status(204).send();
-    });
-  });
+    db.prepare('DELETE FROM categories WHERE id = ?').run(id);
+    res.status(204).send();
+  } catch (e) { res.status(500).json({ error: 'Ошибка удаления категории' }); }
 });
 
 // API: get all dishes
 app.get('/api/menu', (req, res) => {
-  db.all('SELECT * FROM dishes ORDER BY category, name', (err, rows) => {
-    if (err) {
-      console.error('Ошибка получения меню:', err);
-      return res.status(500).json({ error: 'Ошибка сервера при получении меню' });
-    }
+  try {
+    const rows = db.prepare('SELECT * FROM dishes ORDER BY category, name').all();
     res.json(rows);
-  });
+  } catch (e) { res.status(500).json({ error: 'Ошибка сервера при получении меню' }); }
 });
 
 /**
@@ -170,60 +151,35 @@ app.get('/api/site-images', (req, res) => {
 // API: create dish (admin only)
 app.post('/api/menu', adminAuth, (req, res) => {
   const { category, name, price, image } = req.body;
-  if (!category || !name || typeof price === 'undefined') {
+  if (!category || !name || typeof price === 'undefined')
     return res.status(400).json({ error: 'Необходимо указать category, name и price' });
-  }
-
-  const stmt = db.prepare(
-    'INSERT INTO dishes (category, name, price, image) VALUES (?, ?, ?, ?)'
-  );
-  stmt.run(category, name, price, image || null, function (err) {
-    if (err) {
-      console.error('Ошибка добавления блюда:', err);
-      return res.status(500).json({ error: 'Ошибка сервера при добавлении блюда' });
-    }
-    res.status(201).json({ id: this.lastID, category, name, price, image: image || null });
-  });
+  try {
+    const result = db.prepare('INSERT INTO dishes (category, name, price, image) VALUES (?, ?, ?, ?)').run(category, name, price, image || null);
+    res.status(201).json({ id: result.lastInsertRowid, category, name, price, image: image || null });
+  } catch (e) { res.status(500).json({ error: 'Ошибка сервера при добавлении блюда' }); }
 });
 
 // API: update dish (admin only)
 app.put('/api/menu/:id', adminAuth, (req, res) => {
   const { id } = req.params;
   const { category, name, price, image } = req.body;
-
-  if (!category || !name || typeof price === 'undefined') {
+  if (!category || !name || typeof price === 'undefined')
     return res.status(400).json({ error: 'Необходимо указать category, name и price' });
-  }
-
-  const stmt = db.prepare(
-    'UPDATE dishes SET category = ?, name = ?, price = ?, image = ? WHERE id = ?'
-  );
-  stmt.run(category, name, price, image || null, id, function (err) {
-    if (err) {
-      console.error('Ошибка обновления блюда:', err);
-      return res.status(500).json({ error: 'Ошибка сервера при обновлении блюда' });
-    }
-    if (this.changes === 0) {
-      return res.status(404).json({ error: 'Блюдо не найдено' });
-    }
+  try {
+    const result = db.prepare('UPDATE dishes SET category = ?, name = ?, price = ?, image = ? WHERE id = ?').run(category, name, price, image || null, id);
+    if (result.changes === 0) return res.status(404).json({ error: 'Блюдо не найдено' });
     res.json({ id: Number(id), category, name, price, image: image || null });
-  });
+  } catch (e) { res.status(500).json({ error: 'Ошибка сервера при обновлении блюда' }); }
 });
 
 // API: delete dish (admin only)
 app.delete('/api/menu/:id', adminAuth, (req, res) => {
   const { id } = req.params;
-  const stmt = db.prepare('DELETE FROM dishes WHERE id = ?');
-  stmt.run(id, function (err) {
-    if (err) {
-      console.error('Ошибка удаления блюда:', err);
-      return res.status(500).json({ error: 'Ошибка сервера при удалении блюда' });
-    }
-    if (this.changes === 0) {
-      return res.status(404).json({ error: 'Блюдо не найдено' });
-    }
+  try {
+    const result = db.prepare('DELETE FROM dishes WHERE id = ?').run(id);
+    if (result.changes === 0) return res.status(404).json({ error: 'Блюдо не найдено' });
     res.status(204).send();
-  });
+  } catch (e) { res.status(500).json({ error: 'Ошибка сервера при удалении блюда' }); }
 });
 
 // API: проверка токена (используется страницей /login)
