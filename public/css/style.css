@@ -318,6 +318,12 @@ img{ max-width:100%; height:auto; display:block; }
   font-weight: 700;
   letter-spacing: -.01em;
 }
+.dish-desc{
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-top: 3px;
+}
 .dish-price{
   font-weight: 800;
   color: var(--accent);

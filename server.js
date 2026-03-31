@@ -30,9 +30,12 @@ async function initDB() {
     id SERIAL PRIMARY KEY,
     category TEXT NOT NULL,
     name TEXT NOT NULL,
+    description TEXT,
     price REAL NOT NULL,
     image TEXT
   )`);
+  // Миграция: добавляем description если ещё нет
+  await pool.query(`ALTER TABLE dishes ADD COLUMN IF NOT EXISTS description TEXT`);
   console.log('БД инициализирована');
 }
 initDB().catch(e => console.error('Ошибка инициализации БД:', e));
@@ -118,26 +121,26 @@ app.get('/api/menu', async (req, res) => {
 });
 
 app.post('/api/menu', adminAuth, async (req, res) => {
-  const { category, name, price, image } = req.body;
+  const { category, name, description, price, image } = req.body;
   if (!category || !name || typeof price === 'undefined')
     return res.status(400).json({ error: 'Необходимо указать category, name и price' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO dishes (category, name, price, image) VALUES ($1, $2, $3, $4) RETURNING *',
-      [category, name, price, image || null]
+      'INSERT INTO dishes (category, name, description, price, image) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [category, name, description || null, price, image || null]
     );
     res.status(201).json(rows[0]);
   } catch (e) { res.status(500).json({ error: 'Ошибка добавления блюда' }); }
 });
 
 app.put('/api/menu/:id', adminAuth, async (req, res) => {
-  const { category, name, price, image } = req.body;
+  const { category, name, description, price, image } = req.body;
   if (!category || !name || typeof price === 'undefined')
     return res.status(400).json({ error: 'Необходимо указать category, name и price' });
   try {
     const { rows, rowCount } = await pool.query(
-      'UPDATE dishes SET category=$1, name=$2, price=$3, image=$4 WHERE id=$5 RETURNING *',
-      [category, name, price, image || null, req.params.id]
+      'UPDATE dishes SET category=$1, name=$2, description=$3, price=$4, image=$5 WHERE id=$6 RETURNING *',
+      [category, name, description || null, price, image || null, req.params.id]
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Блюдо не найдено' });
     res.json(rows[0]);

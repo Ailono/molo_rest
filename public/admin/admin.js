@@ -203,6 +203,7 @@ function renderCategories() {
 function resetForm() {
   qs('dish-id').value = '';
   qs('dish-name').value = '';
+  qs('dish-description').value = '';
   qs('dish-price').value = '';
   qs('dish-image').value = '';
   qs('dish-category').value = '';
@@ -216,6 +217,7 @@ function resetForm() {
 function editDish(d) {
   qs('dish-id').value = d.id;
   qs('dish-name').value = d.name || '';
+  qs('dish-description').value = d.description || '';
   qs('dish-price').value = d.price ?? '';
   qs('dish-image').value = d.image || '';
   qs('form-title').textContent = 'Редактировать блюдо';
@@ -315,6 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const id = qs('dish-id').value.trim();
     const category = qs('dish-category').value;
     const name = qs('dish-name').value.trim();
+    const description = qs('dish-description').value.trim() || null;
     const price = Number(String(qs('dish-price').value).replace(',', '.'));
     const image = qs('dish-image').value.trim() || null;
 
@@ -322,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!name) { toast('Введите название', true); return; }
     if (!price || price <= 0) { toast('Введите корректную цену', true); return; }
 
-    const payload = { category, name, price, image };
+    const payload = { category, name, description, price, image };
     try {
       if (id) {
         await api(`/api/menu/${id}`, { method: 'PUT', body: JSON.stringify(payload) });

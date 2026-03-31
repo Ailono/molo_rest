@@ -49,11 +49,20 @@ function renderDishes(dishes) {
     name.className = 'dish-name';
     name.textContent = d.name || '';
 
+    if (d.description) {
+      const desc = document.createElement('div');
+      desc.className = 'dish-desc';
+      desc.textContent = d.description;
+      body.appendChild(name);
+      body.appendChild(desc);
+    } else {
+      body.appendChild(name);
+    }
+
     const price = document.createElement('div');
     price.className = 'dish-price';
     price.textContent = `${Math.round(Number(d.price))} ₽`;
 
-    body.appendChild(name);
     body.appendChild(price);
     card.appendChild(media);
     card.appendChild(body);
