@@ -29,6 +29,7 @@ function renderDishes(dishes) {
   dishes.forEach((d) => {
     const card = document.createElement('article');
     card.className = 'card';
+    card.addEventListener('click', () => openModal(d));
 
     const media = document.createElement('div');
     media.className = 'media';
@@ -49,25 +50,38 @@ function renderDishes(dishes) {
     name.className = 'dish-name';
     name.textContent = d.name || '';
 
-    if (d.description) {
-      const desc = document.createElement('div');
-      desc.className = 'dish-desc';
-      desc.textContent = d.description;
-      body.appendChild(name);
-      body.appendChild(desc);
-    } else {
-      body.appendChild(name);
-    }
-
     const price = document.createElement('div');
     price.className = 'dish-price';
     price.textContent = `${Math.round(Number(d.price))} ₽`;
 
+    body.appendChild(name);
     body.appendChild(price);
     card.appendChild(media);
     card.appendChild(body);
     grid.appendChild(card);
   });
+}
+
+function openModal(d) {
+  const overlay = document.getElementById('dish-modal-overlay');
+  document.getElementById('modal-name').textContent = d.name || '';
+  document.getElementById('modal-price').textContent = `${Math.round(Number(d.price))} ₽`;
+  document.getElementById('modal-desc').textContent = d.description || '';
+  document.getElementById('modal-desc').style.display = d.description ? '' : 'none';
+
+  const img = document.getElementById('modal-img');
+  const placeholder = document.getElementById('modal-img-placeholder');
+  if (d.image) {
+    img.src = d.image;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    placeholder.style.display = 'block';
+  }
+
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -122,4 +136,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (e) {
     if (grid) grid.innerHTML = '<div class="empty">Не удалось загрузить меню. Проверьте, что сервер запущен.</div>';
   }
+
+  // Modal close
+  const overlay = document.getElementById('dish-modal-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeModal();
+    });
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+  }
 });
+
+function closeModal() {
+  const overlay = document.getElementById('dish-modal-overlay');
+  if (overlay) overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
