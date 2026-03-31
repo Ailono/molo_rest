@@ -194,14 +194,18 @@ h1, h2, h3,
   box-shadow: 0 12px 32px rgba(30,58,95,.12);
 }
 .feature-icon{
-  font-size: 28px;
-  margin-bottom: 10px;
+  font-size: 15px;
+  vertical-align: middle;
+  margin-right: 4px;
 }
 .feature-title{
   font-weight: 800;
   font-size: 15px;
   margin-bottom: 6px;
   letter-spacing: -.01em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .feature-text{
   font-size: 13px;
