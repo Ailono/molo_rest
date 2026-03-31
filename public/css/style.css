@@ -144,23 +144,18 @@ img{ max-width:100%; height:auto; display:block; }
 .hero-logo-wrap{
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: rgba(255,255,255,.5);
   box-shadow: var(--shadow);
   overflow: hidden;
   position: relative;
   min-height: 360px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
 }
 .hero-logo-wrap img{
+  position: absolute;
+  inset: 0;
   width: 100%;
-  max-width: 340px;
-  height: auto;
-  object-fit: contain;
+  height: 100%;
+  object-fit: cover;
   display: block;
-  filter: drop-shadow(0 6px 20px rgba(0,0,0,.10));
 }
 
 /* Features */
