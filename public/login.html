@@ -134,28 +134,42 @@
     </div>
 
     <script>
-      document.getElementById('login-form').addEventListener('submit', async function(e) {
+      document.getElementById('login-form').addEventListener('submit', function(e) {
         e.preventDefault();
-        const user = document.getElementById('login-user').value.trim();
-        const pass = document.getElementById('login-pass').value;
-        const err  = document.getElementById('login-err');
-        err.classList.remove('show');
+        e.stopPropagation();
 
-        const token = btoa(user + ':' + pass);
-        try {
-          const res = await fetch('/api/admin/check', {
-            headers: { 'Authorization': 'Basic ' + token }
-          });
+        var user = document.getElementById('login-user').value.trim();
+        var pass = document.getElementById('login-pass').value;
+        var err  = document.getElementById('login-err');
+        var btn  = document.querySelector('.login-btn');
+
+        err.classList.remove('show');
+        btn.disabled = true;
+        btn.textContent = 'Проверка...';
+
+        var token = btoa(unescape(encodeURIComponent(user + ':' + pass)));
+
+        fetch('/api/admin/check', {
+          method: 'GET',
+          headers: { 'Authorization': 'Basic ' + token }
+        }).then(function(res) {
           if (res.ok) {
             sessionStorage.setItem('admin-token', token);
             window.location.href = '/admin';
           } else {
+            err.textContent = 'Неверный логин или пароль';
             err.classList.add('show');
+            btn.disabled = false;
+            btn.textContent = 'Войти';
           }
-        } catch {
-          err.textContent = 'Ошибка соединения с сервером';
+        }).catch(function(e) {
+          err.textContent = 'Ошибка соединения: ' + e.message;
           err.classList.add('show');
-        }
+          btn.disabled = false;
+          btn.textContent = 'Войти';
+        });
+
+        return false;
       });
     </script>
   </body>
