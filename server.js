@@ -47,11 +47,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Static files
-// /admin и /admin/index.html защищены — отдаём через роут с auth и вставкой токена
-app.use((req, res, next) => {
-  if (req.path === '/admin' || req.path === '/admin/index.html') return next();
-  express.static(PUBLIC_DIR)(req, res, next);
-});
+app.use(express.static(PUBLIC_DIR));
 // Simple basic auth for admin routes
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
@@ -187,16 +183,9 @@ app.get('/api/admin/check', adminAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Admin page (protected) — проверяем Basic Auth, встраиваем токен в страницу
+// Admin page — отдаётся свободно, защита через sessionStorage токен в JS
 app.get(['/admin', '/admin/index.html'], (req, res) => {
-  const user = basicAuth(req);
-  if (!user || user.name !== ADMIN_LOGIN || user.pass !== ADMIN_PASSWORD) {
-    // Нет заголовка — редиректим на страницу входа
-    return res.redirect('/login.html');
-  }
-  let html = fs.readFileSync(path.join(PUBLIC_DIR, 'admin', 'index.html'), 'utf8');
-  html = html.replace(/(<\/head>)/i, `  <meta name="admin-token" content="${ADMIN_TOKEN}">\n$1`);
-  res.send(html);
+  res.sendFile(path.join(PUBLIC_DIR, 'admin', 'index.html'));
 });
 
 // Fallback routes for main pages (for direct navigation)
