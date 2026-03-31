@@ -107,6 +107,11 @@ h1, h2, h3,
   box-shadow: none;
   font-weight: 400;
 }
+.nav a.nav-delivery:hover {
+  border-color: var(--border);
+  color: var(--ink);
+  background: rgba(255,255,255,.55);
+}
 
 /* Hero */
 .hero{
