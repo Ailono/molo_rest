@@ -35,6 +35,7 @@ h1, h2, h3,
 .stat-num {
   color: #2b3a52;
   font-weight: 700;
+  font-family: 'Playfair Display', Georgia, serif;
 }
 
 .container{
