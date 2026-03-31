@@ -99,6 +99,14 @@ h1, h2, h3,
   border-color: var(--accent);
   box-shadow: 0 3px 10px rgba(30,58,95,.25);
 }
+.nav a.nav-delivery,
+.nav a.nav-delivery:hover {
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  font-weight: 400;
+}
 
 /* Hero */
 .hero{
