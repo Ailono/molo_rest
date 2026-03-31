@@ -209,6 +209,8 @@ function resetForm() {
   qs('dish-category').selectedIndex = 0;
   qs('form-title').textContent = 'Добавить блюдо';
   qs('save-btn').textContent = 'Добавить блюдо';
+  const preview = qs('dish-image-preview');
+  if (preview) preview.style.display = 'none';
 }
 
 function editDish(d) {
@@ -264,6 +266,37 @@ async function loadAll() {
     toast(`Ошибка загрузки: ${e.message}`, true);
   }
 }
+
+// ── Image upload ──────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const fileInput = document.getElementById('dish-image-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('image', file);
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Authorization': 'Basic ' + getToken() },
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('dish-image').value = data.url;
+          const preview = document.getElementById('dish-image-preview');
+          const previewImg = document.getElementById('dish-image-preview-img');
+          previewImg.src = data.url;
+          preview.style.display = '';
+          toast('Фото загружено');
+        } else {
+          toast(data.error || 'Ошибка загрузки фото', true);
+        }
+      } catch (e) { toast('Ошибка загрузки фото', true); }
+    });
+  }
+});
 
 // ── Init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

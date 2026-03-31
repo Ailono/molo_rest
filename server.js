@@ -4,6 +4,7 @@ const fs = require('fs');
 const bodyParser = require('body-parser');
 const basicAuth = require('basic-auth');
 const Database = require('better-sqlite3');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,6 +43,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS dishes (
  * Данные вносятся вручную через админ-панель.
  */
 
+// Multer — загрузка фото блюд в public/images/
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, IMAGES_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const name = Date.now() + '-' + Math.round(Math.random() * 1e6) + ext;
+    cb(null, name);
+  }
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/image\/(jpeg|png|webp|gif)/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Только изображения'));
+  }
+});
+
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -61,6 +80,12 @@ function adminAuth(req, res, next) {
   }
   return next();
 }
+
+// API: upload dish image (admin only)
+app.post('/api/upload', adminAuth, upload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+  res.json({ url: `/images/${req.file.filename}` });
+});
 
 // API: get all categories
 app.get('/api/categories', (req, res) => {

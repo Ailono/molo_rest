@@ -368,8 +368,17 @@
                         <input id="dish-price" required inputmode="decimal" placeholder="450" />
                       </div>
                       <div class="field">
-                        <label for="dish-image">Ссылка на фото (необязательно)</label>
-                        <input id="dish-image" placeholder="/images/имя-файла.jpg" />
+                        <label for="dish-image">Фото блюда</label>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                          <input id="dish-image" placeholder="/images/имя-файла.jpg" style="flex:1;min-width:0;" />
+                          <label style="display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border-radius:999px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;border:2px solid var(--accent);">
+                            📎 Загрузить
+                            <input type="file" id="dish-image-file" accept="image/*" style="display:none;" />
+                          </label>
+                        </div>
+                        <div id="dish-image-preview" style="margin-top:6px;display:none;">
+                          <img id="dish-image-preview-img" style="height:60px;border-radius:8px;border:1px solid var(--border);object-fit:cover;" />
+                        </div>
                       </div>
                     </div>
                     <div class="btn-row" style="margin-top: 16px;">
