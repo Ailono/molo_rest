@@ -47,7 +47,7 @@ cloudinary.config({
 // Multer — память, потом Cloudinary
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/image\/(jpeg|png|webp|gif)/.test(file.mimetype)) cb(null, true);
     else cb(new Error('Только изображения'));
@@ -153,16 +153,24 @@ app.delete('/api/menu/:id', adminAuth, async (req, res) => {
 });
 
 // Image upload → Cloudinary
-app.post('/api/upload', adminAuth, upload.single('image'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-  const stream = cloudinary.uploader.upload_stream(
-    { folder: 'molo-menu', resource_type: 'image' },
-    (error, result) => {
-      if (error) return res.status(500).json({ error: 'Ошибка загрузки в Cloudinary' });
-      res.json({ url: result.secure_url });
+app.post('/api/upload', adminAuth, (req, res) => {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Файл слишком большой (максимум 20MB)'
+        : err.message || 'Ошибка загрузки';
+      return res.status(400).json({ error: msg });
     }
-  );
-  stream.end(req.file.buffer);
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'molo-menu', resource_type: 'image' },
+      (error, result) => {
+        if (error) return res.status(500).json({ error: 'Ошибка загрузки в Cloudinary' });
+        res.json({ url: result.secure_url });
+      }
+    );
+    stream.end(req.file.buffer);
+  });
 });
 
 // Admin page
