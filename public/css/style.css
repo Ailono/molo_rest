@@ -1,7 +1,7 @@
-:root{
+﻿:root{
   --bg: #F5F0E6;
-  --ink: #1c2323;
-  --muted: #556060;
+  --ink: #2b3a52;
+  --muted: #6b7a8d;
   --accent: #1e3a5f;
   --accent-2: #152d4a;
   --card: rgba(255,255,255,.55);
@@ -107,7 +107,7 @@ img{ max-width:100%; height:auto; display:block; }
 .kicker{
   color: var(--accent);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
   margin-bottom: 14px;
@@ -185,7 +185,7 @@ img{ max-width:100%; height:auto; display:block; }
   margin-bottom: 10px;
 }
 .feature-title{
-  font-weight: 800;
+  font-weight: 600;
   font-size: 15px;
   margin-bottom: 6px;
   letter-spacing: -.01em;
@@ -206,7 +206,7 @@ img{ max-width:100%; height:auto; display:block; }
   border: 2px solid var(--accent);
   background: var(--accent);
   color: #fff;
-  font-weight: 700;
+  font-weight: 500;
   font-size: 14px;
   letter-spacing: .01em;
   transition: background .15s ease, border-color .15s ease, transform .1s ease, box-shadow .15s ease;
@@ -342,7 +342,7 @@ img{ max-width:100%; height:auto; display:block; }
 }
 .dish-modal-name{
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -.02em;
   margin: 0 0 8px;
 }
@@ -354,7 +354,7 @@ img{ max-width:100%; height:auto; display:block; }
 }
 .dish-modal-price{
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--accent);
 }
 .dish-modal-close{
@@ -391,11 +391,11 @@ img{ max-width:100%; height:auto; display:block; }
   gap: 10px;
 }
 .dish-name{
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: -.01em;
 }
 .dish-price{
-  font-weight: 800;
+  font-weight: 600;
   color: var(--accent);
   white-space: nowrap;
 }
@@ -440,7 +440,7 @@ img{ max-width:100%; height:auto; display:block; }
 }
 .meta-row a{
   color: var(--accent);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .info-grid{
@@ -468,13 +468,13 @@ img{ max-width:100%; height:auto; display:block; }
 .info .label{
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: .06em;
   text-transform: uppercase;
   margin-bottom: 6px;
 }
 .info .value{
-  font-weight: 700;
+  font-weight: 500;
   font-size: 15px;
 }
 
@@ -507,7 +507,7 @@ th{
   text-align:left;
   color: var(--accent);
   background: rgba(30,58,95,.05);
-  font-weight: 800;
+  font-weight: 600;
 }
 tr:last-child td{ border-bottom: 0; }
 .tag{
@@ -517,7 +517,7 @@ tr:last-child td{ border-bottom: 0; }
   border: 1px solid var(--border);
   color: var(--accent);
   background: rgba(245,240,230,.7);
-  font-weight: 700;
+  font-weight: 500;
 }
 .row-actions{
   display:flex;
@@ -530,7 +530,7 @@ tr:last-child td{ border-bottom: 0; }
   border: 1px solid var(--border);
   background: rgba(255,255,255,.55);
   cursor:pointer;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--accent);
 }
 .btn-sm.danger{
@@ -551,7 +551,7 @@ tr:last-child td{ border-bottom: 0; }
   box-shadow: var(--shadow);
 }
 .field{ display:flex; flex-direction: column; gap: 6px; }
-.field label{ font-size: 12px; color: var(--muted); font-weight: 700; }
+.field label{ font-size: 12px; color: var(--muted); font-weight: 500; }
 .field input, .field select{
   padding: 12px 12px;
   border-radius: 12px;
