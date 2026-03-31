@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Molo — админ</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      /* ── Layout ── */
+      .admin-layout {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 24px;
+        align-items: start;
+        padding: 32px 0 64px;
+      }
+
+      /* ── Sidebar ── */
+      .admin-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        position: sticky;
+        top: 80px;
+      }
+      .sidebar-card {
+        background: rgba(255,255,255,.55);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .sidebar-card-head {
+        padding: 14px 16px 10px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+      }
+      .sidebar-nav {
+        display: flex;
+        flex-direction: column;
+      }
+      .sidebar-nav a {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--muted);
+        border-bottom: 1px solid rgba(30,58,95,.08);
+        transition: .12s ease;
+        cursor: pointer;
+      }
+      .sidebar-nav a:last-child { border-bottom: 0; }
+      .sidebar-nav a:hover { background: rgba(30,58,95,.06); color: var(--ink); }
+      .sidebar-nav a.active { background: rgba(30,58,95,.10); color: var(--accent); }
+      .sidebar-nav a .icon { font-size: 16px; width: 20px; text-align: center; }
+
+      /* ── Main content ── */
+      .admin-main { display: flex; flex-direction: column; gap: 20px; }
+
+      /* ── Panel card ── */
+      .panel {
+        background: rgba(255,255,255,.55);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid var(--border);
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .panel-title {
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: -.01em;
+        margin: 0;
+      }
+      .panel-body { padding: 20px; }
+
+      /* ── Form grid ── */
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .form-grid .full { grid-column: 1 / -1; }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .field input, .field select, .field textarea {
+        padding: 11px 13px;
+        border-radius: 10px;
+        border: 1.5px solid var(--border);
+        background: var(--bg);
+        font-size: 14px;
+        font-family: inherit;
+        color: var(--ink);
+        outline: none;
+        transition: border-color .15s, box-shadow .15s;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .field select { cursor: pointer; }
+      .field input:focus, .field select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(30,58,95,.12);
+      }
+
+      /* ── Buttons ── */
+      .btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .btn-primary {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 10px 18px; border-radius: 999px;
+        background: var(--accent); color: var(--bg);
+        border: 1.5px solid var(--accent);
+        font-size: 13px; font-weight: 700; cursor: pointer;
+        transition: .15s ease;
+      }
+      .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+      .btn-ghost {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 10px 16px; border-radius: 999px;
+        background: transparent; color: var(--accent);
+        border: 1.5px solid var(--border);
+        font-size: 13px; font-weight: 700; cursor: pointer;
+        transition: .15s ease;
+      }
+      .btn-ghost:hover { background: rgba(30,58,95,.08); border-color: var(--accent); }
+      .btn-danger {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 7px 12px; border-radius: 999px;
+        background: transparent; color: #b91c1c;
+        border: 1.5px solid rgba(185,28,28,.25);
+        font-size: 12px; font-weight: 700; cursor: pointer;
+        transition: .15s ease;
+      }
+      .btn-danger:hover { background: rgba(185,28,28,.08); }
+      .btn-edit {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 7px 12px; border-radius: 999px;
+        background: transparent; color: var(--accent);
+        border: 1.5px solid var(--border);
+        font-size: 12px; font-weight: 700; cursor: pointer;
+        transition: .15s ease;
+      }
+      .btn-edit:hover { background: rgba(30,58,95,.08); }
+
+      /* ── Table ── */
+      .data-table { width: 100%; border-collapse: collapse; }
+      .data-table th {
+        text-align: left; padding: 10px 14px;
+        font-size: 11px; font-weight: 800; letter-spacing: .06em;
+        text-transform: uppercase; color: var(--muted);
+        border-bottom: 1.5px solid var(--border);
+        background: rgba(30,58,95,.04);
+      }
+      .data-table td {
+        padding: 11px 14px;
+        font-size: 13px;
+        border-bottom: 1px solid rgba(30,58,95,.08);
+        vertical-align: middle;
+      }
+      .data-table tr:last-child td { border-bottom: 0; }
+      .data-table tr:hover td { background: rgba(30,58,95,.03); }
+      .td-actions { display: flex; gap: 6px; }
+      .thumb {
+        width: 48px; height: 36px;
+        object-fit: cover; border-radius: 6px;
+        border: 1px solid var(--border);
+        display: block;
+      }
+      .cat-pill {
+        display: inline-flex; padding: 4px 10px;
+        border-radius: 999px; font-size: 11px; font-weight: 700;
+        background: rgba(30,58,95,.10); color: var(--accent);
+        border: 1px solid rgba(30,58,95,.18);
+        white-space: nowrap;
+      }
+      .price-cell { font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+      /* ── Category list ── */
+      .cat-list { display: flex; flex-direction: column; gap: 0; }
+      .cat-item {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 11px 14px;
+        border-bottom: 1px solid rgba(30,58,95,.08);
+        font-size: 14px; font-weight: 600;
+      }
+      .cat-item:last-child { border-bottom: 0; }
+      .cat-item-name { display: flex; align-items: center; gap: 8px; }
+      .cat-count {
+        font-size: 11px; font-weight: 700; color: var(--muted);
+        background: rgba(30,58,95,.08); padding: 2px 8px;
+        border-radius: 999px;
+      }
+
+      /* ── Add category inline ── */
+      .add-cat-row {
+        display: flex; gap: 8px; padding: 14px 20px;
+        border-top: 1px solid var(--border);
+        background: rgba(30,58,95,.03);
+      }
+      .add-cat-row input {
+        flex: 1; padding: 9px 12px;
+        border-radius: 10px; border: 1.5px solid var(--border);
+        background: var(--bg); font-size: 13px; font-family: inherit;
+        color: var(--ink); outline: none;
+        transition: border-color .15s;
+      }
+      .add-cat-row input:focus { border-color: var(--accent); }
+
+      /* ── Toast ── */
+      .toast {
+        position: fixed; bottom: 24px; right: 24px;
+        padding: 13px 20px; border-radius: 12px;
+        background: var(--accent); color: var(--bg);
+        font-size: 13px; font-weight: 700;
+        box-shadow: 0 8px 24px rgba(0,0,0,.18);
+        opacity: 0; transform: translateY(10px);
+        transition: .2s ease; pointer-events: none; z-index: 999;
+      }
+      .toast.show { opacity: 1; transform: translateY(0); }
+      .toast.err { background: #b91c1c; }
+
+      /* ── Empty state ── */
+      .empty-state {
+        padding: 32px 20px; text-align: center;
+        color: var(--muted); font-size: 14px;
+      }
+      .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+
+      /* ── Stats row ── */
+      .stats-row {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+      }
+      .stat-card {
+        padding: 18px 20px;
+        background: rgba(255,255,255,.55);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: 0 4px 14px rgba(0,0,0,.06);
+      }
+      .stat-num { font-size: 28px; font-weight: 800; color: var(--accent); line-height: 1; }
+      .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+      /* ── Responsive ── */
+      @media (max-width: 860px) {
+        .admin-layout { grid-template-columns: 1fr; }
+        .admin-sidebar { position: static; flex-direction: row; flex-wrap: wrap; }
+        .sidebar-card { flex: 1; min-width: 200px; }
+        .stats-row { grid-template-columns: 1fr 1fr; }
+        .form-grid { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 560px) {
+        .stats-row { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="На главную">
+          <img id="site-logo" src="/images/шапка-обложка-3.png" alt="Molo" />
+        </a>
+        <nav class="nav" aria-label="Навигация">
+          <a href="/menu.html">Меню</a>
+          <a href="/contacts.html">Контакты</a>
+          <a class="active" href="/admin">Админ</a>
+          <a href="#" onclick="sessionStorage.removeItem('admin-token'); window.location.href='/login.html'; return false;" style="color:#b91c1c;">Выйти</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="container">
+        <div style="padding: 28px 0 4px;">
+          <div class="kicker">Панель управления</div>
+          <h1 style="margin: 8px 0 0; font-size: clamp(24px, 3vw, 36px); letter-spacing: -.02em;">Меню ресторана</h1>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row" style="margin: 20px 0 0;" id="stats-row">
+          <div class="stat-card">
+            <div class="stat-num" id="stat-dishes">—</div>
+            <div class="stat-label">Блюд в меню</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-cats">—</div>
+            <div class="stat-label">Категорий</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-avg">—</div>
+            <div class="stat-label">Средняя цена</div>
+          </div>
+        </div>
+
+        <div class="admin-layout">
+          <!-- Sidebar -->
+          <aside class="admin-sidebar">
+            <div class="sidebar-card">
+              <div class="sidebar-card-head">Разделы</div>
+              <nav class="sidebar-nav">
+                <a class="active" data-section="dishes" onclick="switchSection('dishes')">
+                  <span class="icon">🍽️</span> Блюда
+                </a>
+                <a data-section="categories" onclick="switchSection('categories')">
+                  <span class="icon">📂</span> Категории
+                </a>
+              </nav>
+            </div>
+            <div class="sidebar-card">
+              <div class="sidebar-card-head">Быстрые ссылки</div>
+              <nav class="sidebar-nav">
+                <a href="/menu.html" target="_blank">
+                  <span class="icon">👁️</span> Открыть меню
+                </a>
+                <a href="/" target="_blank">
+                  <span class="icon">🏠</span> Главная
+                </a>
+              </nav>
+            </div>
+          </aside>
+
+          <!-- Main -->
+          <div class="admin-main">
+
+            <!-- SECTION: DISHES -->
+            <div id="section-dishes">
+              <!-- Add/Edit form -->
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 class="panel-title" id="form-title">Добавить блюдо</h2>
+                  <button class="btn-ghost" type="button" id="reset-btn">Отмена</button>
+                </div>
+                <div class="panel-body">
+                  <form id="dish-form">
+                    <input type="hidden" id="dish-id" />
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="dish-category">Категория</label>
+                        <select id="dish-category" required>
+                          <option value="" disabled selected>— выберите категорию —</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <label for="dish-name">Название блюда</label>
+                        <input id="dish-name" required placeholder="Например: Цезарь с курицей" />
+                      </div>
+                      <div class="field">
+                        <label for="dish-price">Цена (₽)</label>
+                        <input id="dish-price" required inputmode="decimal" placeholder="450" />
+                      </div>
+                      <div class="field">
+                        <label for="dish-image">Ссылка на фото (необязательно)</label>
+                        <input id="dish-image" placeholder="/images/имя-файла.jpg" />
+                      </div>
+                    </div>
+                    <div class="btn-row" style="margin-top: 16px;">
+                      <button class="btn-primary" type="submit" id="save-btn">Добавить блюдо</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Dishes table -->
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 class="panel-title">Все блюда <span id="dishes-count" style="font-size:13px;font-weight:600;color:var(--muted);"></span></h2>
+                  <div class="btn-row">
+                    <select id="filter-category" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);font-size:13px;font-family:inherit;color:var(--ink);outline:none;cursor:pointer;">
+                      <option value="">Все категории</option>
+                    </select>
+                    <button class="btn-danger" id="delete-cat-btn" style="display:none;" type="button">Удалить категорию</button>
+                  </div>
+                </div>
+                <div id="dishes-wrap">
+                  <div class="empty-state"><div class="icon">🍽️</div>Загрузка...</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION: CATEGORIES -->
+            <div id="section-categories" style="display:none;">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 class="panel-title">Категории меню</h2>
+                </div>
+                <div id="cat-list-wrap">
+                  <div class="empty-state"><div class="icon">📂</div>Загрузка...</div>
+                </div>
+                <div class="add-cat-row">
+                  <input id="new-cat-input" placeholder="Название новой категории..." maxlength="60" />
+                  <button class="btn-primary" type="button" id="add-cat-btn">Добавить</button>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /admin-main -->
+        </div><!-- /admin-layout -->
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="container">© Molo</div>
+    </footer>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/js/common.js"></script>
+    <script src="/admin/admin.js"></script>
+  </body>
+</html>

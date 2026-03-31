@@ -1,0 +1,18 @@
+{
+  "name": "molo-restaurant",
+  "version": "1.0.0",
+  "description": "Сайт-визитка ресторана Molo с админ-панелью и меню из Excel.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node scripts/seed.js",
+    "seed:reset": "node scripts/seed.js --reset"
+  },
+  "dependencies": {
+    "basic-auth": "^2.0.1",
+    "body-parser": "^1.20.3",
+    "express": "^4.21.2",
+    "sqlite3": "^5.1.7",
+    "xlsx": "^0.18.5"
+  }
+}

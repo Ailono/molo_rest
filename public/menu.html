@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Molo — меню</title>
+    <meta name="description" content="Меню ресторана Molo." />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="На главную">
+          <img id="site-logo" src="/images/шапка-обложка-3.png" alt="Molo" />
+        </a>
+        <nav class="nav" aria-label="Навигация">
+          <a id="nav-menu" href="/menu.html">Меню</a>
+          <a id="nav-contacts" href="/contacts.html">Контакты</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="menu-top">
+        <div class="container">
+          <div class="kicker">Меню</div>
+          <h1 style="margin:10px 0 14px; font-size: clamp(28px, 3.6vw, 44px); letter-spacing:-.02em;">Выберите категорию</h1>
+          <div class="tabs" id="category-tabs" aria-label="Категории меню"></div>
+          <div id="menu-grid" class="menu-grid" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">© Molo</div>
+    </footer>
+
+    <script src="/js/common.js"></script>
+    <script src="/js/menu.js"></script>
+  </body>
+</html>
+
