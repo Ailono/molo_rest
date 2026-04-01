@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Auto Git Commit",
+  "description": "Автоматически коммитит все изменения после завершения работы агента",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "git add . && git commit -m \"auto: agent changes\" --allow-empty"
+  }
+}
