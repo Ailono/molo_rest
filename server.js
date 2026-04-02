@@ -15,8 +15,8 @@ const IMAGES_DIR = path.join(PUBLIC_DIR, 'images');
 
 // PostgreSQL
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+  connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_knPB7rEhGf2a@ep-solitary-meadow-ag1p6tan.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require',
+  ssl: { rejectUnauthorized: false }
 });
 
 // Create tables if not exist
