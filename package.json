@@ -4,7 +4,7 @@
   "description": "Сайт-визитка ресторана Molo с админ-панелью и меню из Excel.",
   "main": "server.js",
   "engines": {
-    "node": "20.x"
+    "node": ">=20"
   },
   "scripts": {
     "start": "node server.js",
@@ -16,7 +16,7 @@
     "body-parser": "^1.20.3",
     "cloudinary": "^2.9.0",
     "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.1.1",
     "pg": "^8.20.0",
     "xlsx": "^0.18.5"
   }
