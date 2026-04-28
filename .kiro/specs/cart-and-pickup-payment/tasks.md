@@ -8,7 +8,7 @@
 
 ## Задачи
 
-- [ ] 1. Создать таблицу `orders` и маршруты OrderAPI в `server.js`
+- [x] 1. Создать таблицу `orders` и маршруты OrderAPI в `server.js`
   - Добавить `CREATE TABLE IF NOT EXISTS orders` в функцию `initDB()` со всеми полями из дизайна
   - Реализовать `getSbpPaymentUrl(orderId)` — заглушка, возвращает `https://sbp.stub/pay/${orderId}`
   - Реализовать `formatOrderMessage(order)` — формирует HTML-текст для Telegram
@@ -61,7 +61,7 @@
 - [ ] 2. Контрольная точка — убедиться, что все тесты проходят
   - Убедиться, что все тесты проходят, задать вопросы пользователю при необходимости.
 
-- [ ] 3. Создать `public/js/cart.js` — модуль CartUI (feature flag + состояние корзины)
+- [x] 3. Создать `public/js/cart.js` — модуль CartUI (feature flag + состояние корзины)
   - Реализовать `window.CartUI` с публичными методами: `init()`, `isEnabled()`, `addItem(dish)`, `getItems()`, `clear()`
   - В `init()`: читать `?preview=1` из URL → записывать в `sessionStorage['molo_preview']`; читать `sessionStorage` для определения флага
   - Реализовать `_loadFromStorage()` / `_saveToStorage()` — работа с `localStorage` под ключом `molo_cart`
@@ -93,7 +93,7 @@
     - **Validates: Requirements 2.3, 2.4**
     - `fc.array(CartItem)` → сохранить → `_loadFromStorage()` → глубокое равенство
 
-- [ ] 4. Реализовать отображение корзины: счётчик в хедере и модал
+- [x] 4. Реализовать отображение корзины: счётчик в хедере и модал
   - Добавить HTML-разметку иконки корзины со счётчиком в хедер `menu.html` (скрыта по умолчанию)
   - Добавить HTML-разметку модала корзины в `menu.html`
   - Реализовать `_renderCounter()` — обновление числа на иконке; при пустой корзине — скрывать или показывать «0»
@@ -122,14 +122,14 @@
     - **Validates: Requirements 3.5, 3.6**
     - `fc.record(CartItem, { quantity: 1 })` → декремент → проверить отсутствие в `CartUI.getItems()`
 
-- [ ] 5. Добавить кнопку «В корзину» в карточки блюд (`menu.js`)
+- [x] 5. Добавить кнопку «В корзину» в карточки блюд (`menu.js`)
   - В `renderDishes()` после создания `.body` добавить кнопку `btn-add-to-cart`, если `window.CartUI?.isEnabled()` возвращает `true`
   - Обработчик кнопки: `e.stopPropagation()` + `CartUI.addItem({ id, name, price })`
   - Подключить `cart.js` в `menu.html` **до** `menu.js`
   - Добавить стили для `.btn-add-to-cart` в `style.css`
   - _Требования: 1.1, 1.2, 2.1, 2.2_
 
-- [ ] 6. Реализовать форму оформления заказа и валидацию
+- [x] 6. Реализовать форму оформления заказа и валидацию
   - Реализовать `_openOrderForm()` — переключение модала в режим формы с полями: имя (required), телефон (required), email (optional); тип получения «Самовывоз» (только для чтения)
   - Реализовать `validatePhone(phone)` — длина 10–15 символов, только `[0-9 \-\(\)\+]`
   - Реализовать `validateEmail(email)` — наличие `@` и домена после него
@@ -151,7 +151,7 @@
     - **Validates: Requirements 4.5**
     - `fc.string()` → проверить `validateEmail()` возвращает `false` без `@` или домена
 
-- [ ] 7. Реализовать отправку заказа и редирект
+- [x] 7. Реализовать отправку заказа и редирект
   - Реализовать `_submitOrder()` — сборка тела запроса из формы и `CartUI.getItems()`, POST /api/orders, обработка ответа
   - При успехе: `CartUI.clear()` → редирект на `order-success.html?order_id={id}`
   - При ошибке сервера: показать сообщение об ошибке в форме
@@ -162,7 +162,7 @@
     - **Validates: Requirements 5.6**
     - `fc.array(CartItem, { minLength: 1 })` → mock успешного POST → проверить `CartUI.getItems() === []` и `localStorage`
 
-- [ ] 8. Создать страницу `public/order-success.html`
+- [x] 8. Создать страницу `public/order-success.html`
   - Статическая страница с шапкой сайта и подключённым `style.css`
   - Читать `order_id` из query string (`?order_id=42`) через `URLSearchParams`
   - Если `order_id` есть — показать «Заказ №{id} оформлен»; если нет — «Заказ оформлен»

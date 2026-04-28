@@ -36,6 +36,18 @@ async function initDB() {
   )`);
   // Миграция: добавляем description если ещё нет
   await pool.query(`ALTER TABLE dishes ADD COLUMN IF NOT EXISTS description TEXT`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS orders (
+    id             SERIAL PRIMARY KEY,
+    customer_name  TEXT    NOT NULL,
+    customer_phone TEXT    NOT NULL,
+    customer_email TEXT,
+    items          JSONB   NOT NULL,
+    total_amount   REAL    NOT NULL,
+    pickup_type    TEXT    NOT NULL DEFAULT 'self',
+    status         TEXT    NOT NULL DEFAULT 'pending',
+    payment_url    TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
   console.log('БД инициализирована');
 }
 initDB().catch(e => console.error('Ошибка инициализации БД:', e));
@@ -74,6 +86,42 @@ function adminAuth(req, res, next) {
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR));
+
+// ── Helpers ──────────────────────────────────────────────
+
+function getSbpPaymentUrl(orderId) {
+  return `https://sbp.stub/pay/${orderId}`;
+}
+
+function formatOrderMessage(order) {
+  const itemLines = (order.items || [])
+    .map(i => `  • ${i.name} × ${i.quantity} — ${(i.price * i.quantity).toFixed(2)} ₽`)
+    .join('\n');
+  return `🛒 <b>Новый заказ #${order.id}</b>\n` +
+    `👤 ${order.customer_name}\n` +
+    `📞 ${order.customer_phone}\n\n` +
+    `${itemLines}\n\n` +
+    `💰 Итого: ${order.total_amount} ₽`;
+}
+
+async function sendTelegramNotification(order) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    console.warn('[NotificationService] TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не заданы, уведомление пропущено');
+    return;
+  }
+  const text = formatOrderMessage(order);
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+    });
+  } catch (e) {
+    console.error('[NotificationService] Ошибка отправки в Telegram:', e.message);
+  }
+}
 
 // ── API ───────────────────────────────────────────────────
 
@@ -153,6 +201,43 @@ app.delete('/api/menu/:id', adminAuth, async (req, res) => {
     if (rowCount === 0) return res.status(404).json({ error: 'Блюдо не найдено' });
     res.status(204).send();
   } catch (e) { res.status(500).json({ error: 'Ошибка удаления блюда' }); }
+});
+
+// Orders
+app.post('/api/orders', async (req, res) => {
+  const { customer_name, customer_phone, customer_email, items, total_amount } = req.body;
+  if (!customer_name || !customer_phone || !Array.isArray(items) || items.length === 0 || total_amount == null) {
+    return res.status(400).json({ error: 'Необходимо указать customer_name, customer_phone, items и total_amount' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO orders (customer_name, customer_phone, customer_email, items, total_amount)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [customer_name, customer_phone, customer_email || null, JSON.stringify(items), total_amount]
+    );
+    const order = rows[0];
+    const payment_url = getSbpPaymentUrl(order.id);
+    await pool.query('UPDATE orders SET payment_url = $1 WHERE id = $2', [payment_url, order.id]);
+    order.payment_url = payment_url;
+    sendTelegramNotification(order).catch(e => console.error('[NotificationService]', e.message));
+    res.status(201).json({ order_id: order.id, payment_url });
+  } catch (e) {
+    console.error('Ошибка создания заказа:', e);
+    res.status(500).json({ error: 'Ошибка создания заказа' });
+  }
+});
+
+app.get('/api/orders', adminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM orders ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: 'Ошибка получения заказов' });
+  }
+});
+
+app.post('/api/payment/webhook', (req, res) => {
+  res.json({ ok: true });
 });
 
 // Image upload → Cloudinary

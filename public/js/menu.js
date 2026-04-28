@@ -56,6 +56,18 @@ function renderDishes(dishes) {
 
     body.appendChild(name);
     body.appendChild(price);
+
+    if (window.CartUI?.isEnabled()) {
+      const btn = document.createElement('button');
+      btn.className = 'btn-add-to-cart';
+      btn.textContent = 'В корзину';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.CartUI.addItem({ id: d.id, name: d.name, price: d.price });
+      });
+      body.appendChild(btn);
+    }
+
     card.appendChild(media);
     card.appendChild(body);
     grid.appendChild(card);

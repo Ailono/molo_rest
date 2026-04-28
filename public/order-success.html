@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Molo — заказ принят</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="На главную">
+          <img id="site-logo" src="/images/лого.jpg" alt="Molo" />
+        </a>
+        <nav class="nav" aria-label="Навигация">
+          <a id="nav-menu" href="/menu.html">Меню</a>
+          <a href="/delivery.html" class="nav-delivery">Заказать доставку</a>
+          <a id="nav-contacts" href="/contacts.html">Контакты</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="section">
+        <div class="container">
+          <div class="order-success-wrap">
+            <div class="order-success-icon" aria-hidden="true">✅</div>
+            <h1 class="order-success-title" id="order-success-title">Заказ принят!</h1>
+            <p class="order-success-msg" id="order-success-msg">Ждём вас на самовывоз.</p>
+            <a href="/menu.html" class="btn order-success-btn">Вернуться в меню</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">© Molo</div>
+    </footer>
+
+    <script src="/js/common.js"></script>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var orderId = params.get('order_id');
+        var titleEl = document.getElementById('order-success-title');
+        var msgEl = document.getElementById('order-success-msg');
+        if (orderId && titleEl) {
+          titleEl.textContent = 'Заказ №' + orderId + ' принят!';
+        }
+        if (msgEl) {
+          msgEl.textContent = 'Ждём вас на самовывоз.';
+        }
+      })();
+    </script>
+
+    <style>
+      .order-success-wrap {
+        max-width: 480px;
+        margin: 60px auto;
+        text-align: center;
+        padding: 40px 32px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: rgba(255,255,255,.55);
+        box-shadow: var(--shadow);
+      }
+      .order-success-icon {
+        font-size: 52px;
+        margin-bottom: 16px;
+        line-height: 1;
+      }
+      .order-success-title {
+        margin: 0 0 10px;
+        font-size: clamp(22px, 3vw, 32px);
+      }
+      .order-success-msg {
+        color: var(--muted);
+        font-size: 16px;
+        margin: 0 0 28px;
+        line-height: 1.6;
+      }
+      .order-success-btn {
+        display: inline-flex;
+      }
+    </style>
+  </body>
+</html>

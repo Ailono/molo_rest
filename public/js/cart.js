@@ -1,0 +1,393 @@
+/**
+ * CartUI — модуль корзины для Molo Bistro
+ * Feature flag: ?preview=1 / sessionStorage['molo_preview']
+ * Хранение: localStorage['molo_cart'] (JSON-массив CartItem)
+ */
+(function () {
+  'use strict';
+
+  // ── Внутреннее состояние ──────────────────────────────────────────────────
+  let _items = []; // CartItem[]
+  let _storageAvailable = false;
+
+  function _checkStorage() {
+    try {
+      localStorage.setItem('__test__', '1');
+      localStorage.removeItem('__test__');
+      _storageAvailable = true;
+    } catch (e) {
+      _storageAvailable = false;
+    }
+  }
+
+  function _loadFromStorage() {
+    if (!_storageAvailable) return;
+    try {
+      const raw = localStorage.getItem('molo_cart');
+      _items = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      _items = [];
+    }
+  }
+
+  function _saveToStorage() {
+    if (!_storageAvailable) return;
+    try {
+      localStorage.setItem('molo_cart', JSON.stringify(_items));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // ── Валидация ─────────────────────────────────────────────────────────────
+
+  /**
+   * Validates: Requirements 4.4
+   * Длина 10–15, только [0-9 \-\(\)\+]
+   */
+  function validatePhone(phone) {
+    if (typeof phone !== 'string') return false;
+    const trimmed = phone.trim();
+    if (trimmed.length < 10 || trimmed.length > 15) return false;
+    return /^[0-9 \-\(\)\+]+$/.test(trimmed);
+  }
+
+  /**
+   * Validates: Requirements 4.5
+   * Наличие @ и домена после него
+   */
+  function validateEmail(email) {
+    if (typeof email !== 'string' || email.trim() === '') return false;
+    const at = email.indexOf('@');
+    if (at < 1) return false;
+    const domain = email.slice(at + 1);
+    return domain.includes('.') && domain.length > 2;
+  }
+
+  // ── Рендер счётчика ───────────────────────────────────────────────────────
+
+  function _renderCounter() {
+    const badge = document.getElementById('cart-badge');
+    if (!badge) return;
+    const total = _items.reduce((s, i) => s + i.quantity, 0);
+    badge.textContent = total;
+    badge.style.display = total > 0 ? 'flex' : 'none';
+  }
+
+  // ── Рендер модала ─────────────────────────────────────────────────────────
+
+  function _renderModal() {
+    const list = document.getElementById('cart-items-list');
+    const totalEl = document.getElementById('cart-total-amount');
+    const emptyMsg = document.getElementById('cart-empty-msg');
+    const checkoutBtn = document.getElementById('cart-checkout-btn');
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    if (_items.length === 0) {
+      if (emptyMsg) emptyMsg.style.display = 'block';
+      if (checkoutBtn) checkoutBtn.style.display = 'none';
+      if (totalEl) totalEl.textContent = '0 ₽';
+      return;
+    }
+
+    if (emptyMsg) emptyMsg.style.display = 'none';
+    if (checkoutBtn) checkoutBtn.style.display = 'block';
+
+    _items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'cart-item';
+      row.dataset.id = item.id;
+
+      const info = document.createElement('div');
+      info.className = 'cart-item-info';
+
+      const name = document.createElement('div');
+      name.className = 'cart-item-name';
+      name.textContent = item.name;
+
+      const unitPrice = document.createElement('div');
+      unitPrice.className = 'cart-item-unit-price';
+      unitPrice.textContent = `${Math.round(item.price)} ₽ × `;
+
+      info.appendChild(name);
+      info.appendChild(unitPrice);
+
+      const controls = document.createElement('div');
+      controls.className = 'cart-item-controls';
+
+      const btnMinus = document.createElement('button');
+      btnMinus.className = 'cart-qty-btn';
+      btnMinus.textContent = '−';
+      btnMinus.setAttribute('aria-label', 'Уменьшить количество');
+      btnMinus.addEventListener('click', () => _changeQty(item.id, -1));
+
+      const qty = document.createElement('span');
+      qty.className = 'cart-item-qty';
+      qty.textContent = item.quantity;
+
+      const btnPlus = document.createElement('button');
+      btnPlus.className = 'cart-qty-btn';
+      btnPlus.textContent = '+';
+      btnPlus.setAttribute('aria-label', 'Увеличить количество');
+      btnPlus.addEventListener('click', () => _changeQty(item.id, 1));
+
+      const itemTotal = document.createElement('span');
+      itemTotal.className = 'cart-item-total';
+      itemTotal.textContent = `${Math.round(item.price * item.quantity)} ₽`;
+
+      controls.appendChild(btnMinus);
+      controls.appendChild(qty);
+      controls.appendChild(btnPlus);
+      controls.appendChild(itemTotal);
+
+      row.appendChild(info);
+      row.appendChild(controls);
+      list.appendChild(row);
+    });
+
+    const total = _items.reduce((s, i) => s + i.price * i.quantity, 0);
+    if (totalEl) totalEl.textContent = `${Math.round(total)} ₽`;
+  }
+
+  function _changeQty(id, delta) {
+    const idx = _items.findIndex((i) => i.id === id);
+    if (idx === -1) return;
+    _items[idx].quantity += delta;
+    if (_items[idx].quantity <= 0) {
+      _items.splice(idx, 1);
+    }
+    _saveToStorage();
+    _renderCounter();
+    _renderModal();
+  }
+
+  // ── Открытие / закрытие модала ────────────────────────────────────────────
+
+  function _openModal() {
+    const overlay = document.getElementById('cart-modal-overlay');
+    if (!overlay) return;
+    _showCartView();
+    _renderModal();
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function _closeModal() {
+    const overlay = document.getElementById('cart-modal-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  // ── Переключение между видом корзины и формой ─────────────────────────────
+
+  function _showCartView() {
+    const cartView = document.getElementById('cart-view');
+    const formView = document.getElementById('cart-form-view');
+    if (cartView) cartView.style.display = 'block';
+    if (formView) formView.style.display = 'none';
+  }
+
+  function _openOrderForm() {
+    const cartView = document.getElementById('cart-view');
+    const formView = document.getElementById('cart-form-view');
+    if (cartView) cartView.style.display = 'none';
+    if (formView) {
+      formView.style.display = 'block';
+      // Сбросить ошибки
+      formView.querySelectorAll('.field-error').forEach((el) => {
+        el.textContent = '';
+        el.style.display = 'none';
+      });
+      const errMsg = document.getElementById('order-form-error');
+      if (errMsg) { errMsg.textContent = ''; errMsg.style.display = 'none'; }
+    }
+  }
+
+  // ── Отправка заказа ───────────────────────────────────────────────────────
+
+  async function _submitOrder() {
+    const nameEl = document.getElementById('order-name');
+    const phoneEl = document.getElementById('order-phone');
+    const emailEl = document.getElementById('order-email');
+    const errMsg = document.getElementById('order-form-error');
+
+    const nameErr = document.getElementById('order-name-error');
+    const phoneErr = document.getElementById('order-phone-error');
+    const emailErr = document.getElementById('order-email-error');
+
+    let valid = true;
+
+    // Сбросить ошибки
+    [nameErr, phoneErr, emailErr].forEach((el) => {
+      if (el) { el.textContent = ''; el.style.display = 'none'; }
+    });
+    if (errMsg) { errMsg.textContent = ''; errMsg.style.display = 'none'; }
+
+    const name = nameEl ? nameEl.value.trim() : '';
+    const phone = phoneEl ? phoneEl.value.trim() : '';
+    const email = emailEl ? emailEl.value.trim() : '';
+
+    if (!name) {
+      if (nameErr) { nameErr.textContent = 'Введите имя'; nameErr.style.display = 'block'; }
+      valid = false;
+    }
+
+    if (!phone) {
+      if (phoneErr) { phoneErr.textContent = 'Введите телефон'; phoneErr.style.display = 'block'; }
+      valid = false;
+    } else if (!validatePhone(phone)) {
+      if (phoneErr) { phoneErr.textContent = 'Неверный формат телефона (10–15 цифр, +, -, скобки)'; phoneErr.style.display = 'block'; }
+      valid = false;
+    }
+
+    if (email && !validateEmail(email)) {
+      if (emailErr) { emailErr.textContent = 'Неверный формат email'; emailErr.style.display = 'block'; }
+      valid = false;
+    }
+
+    if (!valid) return;
+
+    const items = _items.map((i) => ({
+      dish_id: i.id,
+      name: i.name,
+      price: i.price,
+      quantity: i.quantity,
+    }));
+    const total_amount = _items.reduce((s, i) => s + i.price * i.quantity, 0);
+
+    const body = {
+      customer_name: name,
+      customer_phone: phone,
+      items,
+      total_amount,
+    };
+    if (email) body.customer_email = email;
+
+    const submitBtn = document.getElementById('order-submit-btn');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Отправка…'; }
+
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Ошибка сервера (${res.status})`);
+      }
+
+      const data = await res.json();
+      window.CartUI.clear();
+      window.location.href = `/order-success.html?order_id=${data.order_id}`;
+    } catch (e) {
+      if (errMsg) {
+        errMsg.textContent = e.message || 'Не удалось оформить заказ. Попробуйте ещё раз.';
+        errMsg.style.display = 'block';
+      }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Оформить заказ'; }
+    }
+  }
+
+  // ── Публичный API ─────────────────────────────────────────────────────────
+
+  window.CartUI = {
+    init() {
+      _checkStorage();
+
+      // Feature flag: ?preview=1 → sessionStorage
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('preview') === '1') {
+        try { sessionStorage.setItem('molo_preview', '1'); } catch (e) { /* ignore */ }
+      }
+
+      _loadFromStorage();
+
+      // Показать иконку корзины только если флаг активен
+      const iconWrap = document.getElementById('cart-icon-wrap');
+      if (iconWrap) {
+        iconWrap.style.display = this.isEnabled() ? 'flex' : 'none';
+      }
+
+      if (!this.isEnabled()) return;
+
+      _renderCounter();
+
+      // Обработчики иконки корзины
+      const cartIcon = document.getElementById('cart-icon-btn');
+      if (cartIcon) {
+        cartIcon.addEventListener('click', _openModal);
+      }
+
+      // Закрытие модала
+      const overlay = document.getElementById('cart-modal-overlay');
+      if (overlay) {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) _closeModal();
+        });
+      }
+
+      const closeBtn = document.getElementById('cart-modal-close');
+      if (closeBtn) closeBtn.addEventListener('click', _closeModal);
+
+      // Кнопка «Оформить заказ»
+      const checkoutBtn = document.getElementById('cart-checkout-btn');
+      if (checkoutBtn) checkoutBtn.addEventListener('click', _openOrderForm);
+
+      // Кнопка «Назад» в форме
+      const backBtn = document.getElementById('order-form-back');
+      if (backBtn) backBtn.addEventListener('click', () => { _showCartView(); _renderModal(); });
+
+      // Отправка формы
+      const submitBtn = document.getElementById('order-submit-btn');
+      if (submitBtn) submitBtn.addEventListener('click', _submitOrder);
+
+      // Закрытие по Escape
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') _closeModal();
+      });
+    },
+
+    isEnabled() {
+      try {
+        return sessionStorage.getItem('molo_preview') === '1';
+      } catch (e) {
+        return false;
+      }
+    },
+
+    addItem(dish) {
+      const existing = _items.find((i) => i.id === dish.id);
+      if (existing) {
+        existing.quantity += 1;
+      } else {
+        _items.push({ id: dish.id, name: dish.name, price: dish.price, quantity: 1 });
+      }
+      _saveToStorage();
+      _renderCounter();
+    },
+
+    getItems() {
+      return _items.slice();
+    },
+
+    clear() {
+      _items = [];
+      _saveToStorage();
+      _renderCounter();
+    },
+
+    // Экспортируем для тестов
+    validatePhone,
+    validateEmail,
+    _loadFromStorage,
+    _saveToStorage,
+    _renderCounter,
+    _renderModal,
+    _changeQty,
+  };
+})();
