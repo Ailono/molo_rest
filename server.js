@@ -165,7 +165,10 @@ app.get('/api/menu', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM dishes ORDER BY category, name');
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: 'Ошибка получения меню' }); }
+  } catch (e) {
+    console.error('Ошибка /api/menu:', e.message);
+    res.status(500).json({ error: 'Ошибка получения меню' });
+  }
 });
 
 app.post('/api/menu', adminAuth, async (req, res) => {
