@@ -46,6 +46,9 @@ function renderDishes(dishes) {
     const body = document.createElement('div');
     body.className = 'body';
 
+    const dishInfo = document.createElement('div');
+    dishInfo.className = 'dish-info';
+
     const name = document.createElement('div');
     name.className = 'dish-name';
     name.textContent = d.name || '';
@@ -54,8 +57,9 @@ function renderDishes(dishes) {
     price.className = 'dish-price';
     price.textContent = `${Math.round(Number(d.price))} ₽`;
 
-    body.appendChild(name);
-    body.appendChild(price);
+    dishInfo.appendChild(name);
+    dishInfo.appendChild(price);
+    body.appendChild(dishInfo);
 
     if (window.CartUI?.isEnabled()) {
       const btn = document.createElement('button');

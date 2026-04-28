@@ -416,8 +416,13 @@ h1, h2, h3,
 .card .body{
   padding: 14px 14px 16px;
   display:flex;
-  align-items:flex-start;
-  justify-content:space-between;
+  flex-direction: column;
+  gap: 8px;
+}
+.card .body .dish-info {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 10px;
 }
 .dish-name{
