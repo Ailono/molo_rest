@@ -279,7 +279,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
-app.listen(PORT, () => console.log(`Сервер Molo запущен на http://localhost:${PORT}`));
+// Экспорт app для тестирования
+module.exports = app;
+
+// Запуск сервера только если файл запущен напрямую
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Сервер Molo запущен на http://localhost:${PORT}`));
+}
 
 function listRootImages() {
   if (!fs.existsSync(IMAGES_DIR)) return [];

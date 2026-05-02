@@ -10,7 +10,8 @@
     "build": "echo 'No build step'",
     "start": "node server.js",
     "seed": "node scripts/seed.js",
-    "seed:reset": "node scripts/seed.js --reset"
+    "seed:reset": "node scripts/seed.js --reset",
+    "test": "jest"
   },
   "dependencies": {
     "basic-auth": "^2.0.1",
@@ -20,5 +21,12 @@
     "multer": "^2.1.1",
     "pg": "^8.20.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^12.9.0",
+    "fast-check": "^4.7.0",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "supertest": "^7.2.2"
   }
 }
