@@ -230,12 +230,12 @@ class NotificationService {
       });
     }
     
-    // WhatsApp channel (Business API)
-    if (process.env.WHATSAPP_BUSINESS_ID && process.env.WHATSAPP_ACCESS_TOKEN) {
+    // Max channel (мессенджер от VK)
+    if (process.env.MAX_API_TOKEN && process.env.MAX_CHAT_ID) {
       channels.push({
-        name: 'whatsapp',
+        name: 'max',
         enabled: true,
-        send: this.sendWhatsApp.bind(this)
+        send: this.sendMax.bind(this)
       });
     }
     
@@ -307,23 +307,24 @@ class NotificationService {
     });
   }
   
-  // WhatsApp отправка (Business API)
-  async sendWhatsApp(message, order) {
-    const businessId = process.env.WHATSAPP_BUSINESS_ID;
-    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-    const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER; // Номер ресторана для получения уведомлений
+  // Max отправка (мессенджер от VK)
+  async sendMax(message, order) {
+    const apiToken = process.env.MAX_API_TOKEN;
+    const chatId = process.env.MAX_CHAT_ID;
     
-    await fetch(`https://graph.facebook.com/v18.0/${businessId}/messages`, {
+    // Max API обычно использует VK API для отправки сообщений
+    // Пример для Max (через VK API)
+    await fetch('https://api.vk.com/method/messages.send', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: phoneNumber,
-        type: 'text',
-        text: { body: message }
+        access_token: apiToken,
+        peer_id: chatId,
+        message: message,
+        random_id: Math.floor(Math.random() * 1000000),
+        v: '5.199' // версия API
       })
     });
   }
