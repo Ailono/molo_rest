@@ -213,61 +213,138 @@ class PaymentService {
 
 ```js
 class NotificationService {
-  // Отправить уведомление о новом заказе
-  async sendOrderNotification(order) {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
-    if (!token || !chatId) {
-      console.warn('[NotificationService] TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не заданы, уведомление пропущено');
-      return;
+  constructor() {
+    this.channels = this.loadChannels();
+  }
+  
+  // Загрузить настроенные каналы уведомлений
+  loadChannels() {
+    const channels = [];
+    
+    // Telegram channel
+    if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+      channels.push({
+        name: 'telegram',
+        enabled: true,
+        send: this.sendTelegram.bind(this)
+      });
     }
     
-    const text = this.formatOrderMessage(order);
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          chat_id: chatId, 
-          text, 
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '✅ Взять в работу', callback_data: `order_${order.id}_take` },
-              { text: '👁️ Посмотреть', url: `${process.env.BASE_URL}/admin/orders/${order.id}` }
-            ]]
-          }
-        })
+    // WhatsApp channel (Business API)
+    if (process.env.WHATSAPP_BUSINESS_ID && process.env.WHATSAPP_ACCESS_TOKEN) {
+      channels.push({
+        name: 'whatsapp',
+        enabled: true,
+        send: this.sendWhatsApp.bind(this)
       });
-    } catch (e) {
-      console.error('[NotificationService] Ошибка отправки в Telegram:', e.message);
     }
+    
+    // Email channel для администраторов
+    if (process.env.ADMIN_EMAIL) {
+      channels.push({
+        name: 'email',
+        enabled: true,
+        send: this.sendEmail.bind(this)
+      });
+    }
+    
+    return channels;
+  }
+  
+  // Отправить уведомление о новом заказе через все каналы
+  async sendOrderNotification(order) {
+    const message = this.formatOrderMessage(order);
+    const promises = this.channels
+      .filter(channel => channel.enabled)
+      .map(channel => 
+        channel.send(message, order).catch(error => {
+          console.error(`[NotificationService] Ошибка отправки через ${channel.name}:`, error.message);
+          return null;
+        })
+      );
+    
+    await Promise.all(promises);
   }
   
   // Отправить уведомление об оплате
   async sendPaymentNotification(order) {
+    const message = `💳 *ОПЛАЧЕНО* Заказ #${order.id}\n` +
+                   `Сумма: ${order.total_amount} ₽\n` +
+                   `Клиент: ${order.customer_name}\n` +
+                   `Телефон: ${order.customer_phone}`;
+    
+    const promises = this.channels
+      .filter(channel => channel.enabled && channel.name !== 'email') // Email не для оплаты
+      .map(channel => 
+        channel.send(message, order).catch(error => {
+          console.error(`[NotificationService] Ошибка отправки уведомления об оплате через ${channel.name}:`, error.message);
+          return null;
+        })
+      );
+    
+    await Promise.all(promises);
+  }
+  
+  // Telegram отправка
+  async sendTelegram(message, order) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
-    if (!token || !chatId) return;
     
-    const text = `💳 *ОПЛАЧЕНО* Заказ #${order.id}\n` +
-                 `Сумма: ${order.total_amount} ₽\n` +
-                 `Клиент: ${order.customer_name}\n` +
-                 `Телефон: ${order.customer_phone}`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        chat_id: chatId, 
+        text: message, 
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Взять в работу', callback_data: `order_${order.id}_take` },
+            { text: '👁️ Посмотреть', url: `${process.env.BASE_URL}/admin/orders/${order.id}` }
+          ]]
+        }
+      })
+    });
+  }
+  
+  // WhatsApp отправка (Business API)
+  async sendWhatsApp(message, order) {
+    const businessId = process.env.WHATSAPP_BUSINESS_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumber = process.env.WHATSAPP_PHONE_NUMBER; // Номер ресторана для получения уведомлений
     
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          chat_id: chatId, 
-          text, 
-          parse_mode: 'Markdown'
-        })
-      });
-    } catch (e) {
-      console.error('[NotificationService] Ошибка отправки уведомления об оплате:', e.message);
-    }
+    await fetch(`https://graph.facebook.com/v18.0/${businessId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phoneNumber,
+        type: 'text',
+        text: { body: message }
+      })
+    });
+  }
+  
+  // Email отправка администраторам
+  async sendEmail(message, order) {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const subject = `Новый заказ #${order.id} в Molo Bistro`;
+    
+    // Используем nodemailer или другой email клиент
+    const transporter = nodemailer.createTransport({
+      // настройки SMTP
+    });
+    
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: adminEmail,
+      subject: subject,
+      text: message,
+      html: `<pre>${message}</pre>`
+    });
   }
   
   // Форматировать сообщение о заказе
@@ -573,6 +650,24 @@ value: '1' (string) или отсутствует
 *For any* набора заказов, функция экспорта должна генерировать CSV файл с колонками: номер заказа, имя клиента, телефон, сумма, статус, время создания.
 
 **Validates: Requirements 8.9**
+
+### Property 31: Мультиканальные уведомления отправляются через все настроенные каналы
+
+*For any* созданного заказа и *for any* набора включенных каналов уведомлений, функция `NotificationService.sendOrderNotification(order)` должна отправить сообщение через каждый включенный канал.
+
+**Validates: Requirements 7.1, 7.2**
+
+### Property 32: Ошибка в одном канале не прерывает отправку через другие каналы
+
+*For any* созданного заказа и *for any* канала, который возвращает ошибку, остальные каналы должны получить уведомление, а ошибка должна быть записана в лог.
+
+**Validates: Requirements 7.4**
+
+### Property 33: Уведомления отправляются при изменении статуса оплаты
+
+*For any* заказа, статус которого меняется на `paid`, функция `NotificationService.sendPaymentNotification(order)` должна быть вызвана через все настроенные каналы (кроме email).
+
+**Validates: Requirements 7.7**
 
 ---
 
