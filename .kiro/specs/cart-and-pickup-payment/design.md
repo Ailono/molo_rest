@@ -1,9 +1,9 @@
-# Дизайн: Корзина + самовывоз + оплата через СБП
+# Дизайн: Корзина + самовывоз/доставка + оплата через Точка банк
 
 ## Обзор
 
-Фича добавляет на сайт ресторана Molo (molobistro.ru) полный цикл онлайн-заказа с самовывозом:
-выбор блюд из меню → корзина → форма оформления → создание заказа в БД → редирект на оплату СБП → уведомление в Telegram.
+Фича добавляет на сайт ресторана Molo (molobistro.ru) полный цикл онлайн-заказа с опциями самовывоза и доставки курьером:
+выбор блюд из меню → корзина → форма оформления с выбором способа получения → создание заказа в БД → оплата через Точка банк → фискализация через облачную онлайн-кассу → уведомление в Telegram → управление заказами через админ-панель.
 
 На период тестирования вся функциональность скрыта за feature flag `?preview=1`, который сохраняется в `sessionStorage`.
 
@@ -19,12 +19,13 @@
 cart.js (CartUI)
   ├─ feature flag (sessionStorage)
   ├─ состояние корзины (localStorage)
-  ├─ модал корзины + форма заказа
+  ├─ модал корзины + форма заказа с выбором способа получения
   └─ POST /api/orders ──────────► OrderAPI (server.js)
                                     ├─ валидация тела запроса
                                     ├─ INSERT INTO orders
-                                    ├─ SBP_Stub.getPaymentUrl()
-                                    └─ NotificationService.send()──► Telegram Bot API
+                                    ├─ PaymentService.createPayment() ──► Точка банк API
+                                    ├─ FiscalService.sendReceipt() ─────► Облачная онлайн-касса
+                                    └─ NotificationService.send()───────► Telegram Bot API
                                     └─ { order_id, payment_url } ◄──
   ◄─ { order_id, payment_url } ──
   └─ redirect / QR
@@ -33,7 +34,9 @@ menu.js (изменения)
   └─ renderDishes() добавляет кнопку «В корзину» если CartUI.isEnabled()
 
 GET /api/orders (adminAuth) ─────► OrderAPI → SELECT * FROM orders ORDER BY created_at DESC
-POST /api/payment/webhook ───────► заглушка, возвращает 200 OK
+POST /api/payment/webhook ───────► PaymentService → обработка вебхуков от Точка банк
+GET /admin/orders ──────────────► AdminPanel → админ-панель для управления заказами
+POST /api/admin/settings ───────► AdminPanel → настройки доставки и работы ресторана
 ```
 
 Взаимодействие между модулями строго однонаправленное: `menu.js` вызывает публичный API `CartUI`, `CartUI` делает HTTP-запросы к серверу, сервер не знает о клиентском коде.
@@ -62,6 +65,12 @@ window.CartUI = {
 
   // Очистить корзину
   clear(): void,
+
+  // Рассчитать стоимость доставки на основе суммы заказа
+  calculateDelivery(subtotal: number): number,
+
+  // Получить настройки доставки с сервера
+  getDeliverySettings(): Promise<DeliverySettings>,
 }
 ```
 
@@ -70,8 +79,10 @@ window.CartUI = {
 - `_renderModal()` — отрисовка содержимого модала корзины
 - `_renderCounter()` — обновление счётчика в хедере
 - `_openModal()` / `_closeModal()` — управление видимостью модала
-- `_openOrderForm()` — переключение модала в режим формы заказа
+- `_openOrderForm()` — переключение модала в режим формы заказа с выбором способа получения
+- `_updateDeliveryForm()` — обновление формы в зависимости от выбранного способа получения
 - `_submitOrder()` — отправка POST /api/orders
+- `_validateOrderForm()` — валидация формы заказа
 
 ### Изменения в `menu.js`
 
@@ -94,13 +105,19 @@ if (window.CartUI?.isEnabled()) {
 
 ### OrderAPI (`server.js`)
 
-Три новых маршрута:
+Новые маршруты:
 
 | Метод | Путь | Auth | Описание |
 |---|---|---|---|
 | POST | /api/orders | — | Создать заказ |
 | GET | /api/orders | adminAuth | Список заказов |
-| POST | /api/payment/webhook | — | Вебхук банка (заглушка) |
+| GET | /api/orders/:id | adminAuth | Получить детали заказа |
+| PUT | /api/orders/:id/status | adminAuth | Изменить статус заказа |
+| POST | /api/payment/webhook | — | Вебхук от Точка банк |
+| GET | /api/settings/delivery | — | Получить настройки доставки |
+| GET | /admin/orders | adminAuth | Админ-панель заказов |
+| GET | /admin/orders/:id | adminAuth | Детали заказа в админке |
+| POST | /api/admin/settings | adminAuth | Обновить настройки |
 
 Тело POST /api/orders:
 ```json
@@ -108,52 +125,180 @@ if (window.CartUI?.isEnabled()) {
   "customer_name": "string (required)",
   "customer_phone": "string (required)",
   "customer_email": "string (optional)",
+  "delivery_type": "self" | "courier",
+  "delivery_address": "string (required if delivery_type='courier')",
+  "delivery_time": "string (required)",
+  "delivery_comment": "string (optional)",
+  "cutlery_count": "number (optional)",
   "items": [{ "dish_id": 1, "name": "Пицца", "price": 590, "quantity": 2 }],
-  "total_amount": 1180
+  "subtotal_amount": 1180,
+  "delivery_cost": 200,
+  "total_amount": 1380
 }
 ```
 
 Ответ 201:
 ```json
-{ "order_id": 42, "payment_url": "https://sbp.stub/pay/42" }
-```
-
-### SBP_Stub
-
-Встроенная функция в `server.js`, не выделяется в отдельный файл:
-
-```js
-function getSbpPaymentUrl(orderId) {
-  return `https://sbp.stub/pay/${orderId}`;
+{ 
+  "order_id": 42, 
+  "payment_url": "https://pay.tochka.com/session/abc123",
+  "order_number": "MOLO-2025-0042"
 }
 ```
 
-При реальной интеграции заменяется на HTTP-запрос к эквайеру без изменения остального кода.
+### PaymentService (`server.js`)
+
+Модуль для работы с эквайрингом Точка банк:
+
+```js
+class PaymentService {
+  // Создать платежную сессию в Точка банк
+  async createPayment(order) {
+    const payload = {
+      amount: order.total_amount * 100, // в копейках
+      currency: "RUB",
+      orderNumber: `MOLO-${order.id}`,
+      description: `Заказ №${order.id} в Molo Bistro`,
+      successUrl: `${process.env.BASE_URL}/order-success?order_id=${order.id}`,
+      failUrl: `${process.env.BASE_URL}/order-failed?order_id=${order.id}`,
+      customerEmail: order.customer_email,
+      customerPhone: order.customer_phone
+    };
+    
+    const response = await fetch('https://api.tochka.com/payments/v1/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.TOCHKA_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await response.json();
+    return {
+      paymentUrl: data.paymentUrl,
+      sessionId: data.sessionId
+    };
+  }
+  
+  // Обработать вебхук от Точка банк
+  async handleWebhook(webhookData) {
+    const { sessionId, status, amount } = webhookData;
+    
+    // Найти заказ по sessionId
+    const order = await db.query('SELECT * FROM orders WHERE payment_session_id = $1', [sessionId]);
+    
+    if (status === 'SUCCESS') {
+      await db.query(
+        'UPDATE orders SET status = $1, payment_status = $2 WHERE id = $3',
+        ['paid', 'completed', order.id]
+      );
+      
+      // Отправить в онлайн-кассу
+      await FiscalService.sendReceipt(order);
+      
+      // Отправить уведомление об оплате
+      await NotificationService.sendPaymentNotification(order);
+    } else if (status === 'FAILED') {
+      await db.query(
+        'UPDATE orders SET payment_status = $1 WHERE id = $2',
+        ['failed', order.id]
+      );
+    }
+  }
+}
+```
 
 ### NotificationService (`server.js`)
 
 ```js
-async function sendTelegramNotification(order) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) {
-    console.warn('[NotificationService] TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не заданы, уведомление пропущено');
-    return;
+class NotificationService {
+  // Отправить уведомление о новом заказе
+  async sendOrderNotification(order) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    if (!token || !chatId) {
+      console.warn('[NotificationService] TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не заданы, уведомление пропущено');
+      return;
+    }
+    
+    const text = this.formatOrderMessage(order);
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          chat_id: chatId, 
+          text, 
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Взять в работу', callback_data: `order_${order.id}_take` },
+              { text: '👁️ Посмотреть', url: `${process.env.BASE_URL}/admin/orders/${order.id}` }
+            ]]
+          }
+        })
+      });
+    } catch (e) {
+      console.error('[NotificationService] Ошибка отправки в Telegram:', e.message);
+    }
   }
-  const text = formatOrderMessage(order);
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' })
+  
+  // Отправить уведомление об оплате
+  async sendPaymentNotification(order) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    if (!token || !chatId) return;
+    
+    const text = `💳 *ОПЛАЧЕНО* Заказ #${order.id}\n` +
+                 `Сумма: ${order.total_amount} ₽\n` +
+                 `Клиент: ${order.customer_name}\n` +
+                 `Телефон: ${order.customer_phone}`;
+    
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          chat_id: chatId, 
+          text, 
+          parse_mode: 'Markdown'
+        })
+      });
+    } catch (e) {
+      console.error('[NotificationService] Ошибка отправки уведомления об оплате:', e.message);
+    }
+  }
+  
+  // Форматировать сообщение о заказе
+  formatOrderMessage(order) {
+    const deliveryType = order.delivery_type === 'self' ? 'Самовывоз' : 'Доставка курьером';
+    const deliveryInfo = order.delivery_type === 'courier' ? 
+      `🏠 Адрес: ${order.delivery_address}\n` +
+      `⏰ Время: ${order.delivery_time}\n` +
+      (order.delivery_comment ? `💬 Комментарий: ${order.delivery_comment}\n` : '') : 
+      `⏰ Время самовывоза: ${order.delivery_time}\n`;
+    
+    let itemsText = '';
+    JSON.parse(order.items).forEach(item => {
+      itemsText += `• ${item.name} x${item.quantity} = ${item.price * item.quantity} ₽\n`;
     });
-  } catch (e) {
-    console.error('[NotificationService] Ошибка отправки в Telegram:', e.message);
+    
+    return `🆕 *НОВЫЙ ЗАКАЗ* #${order.id}\n` +
+           `👤 Клиент: ${order.customer_name}\n` +
+           `📞 Телефон: ${order.customer_phone}\n` +
+           (order.customer_email ? `📧 Email: ${order.customer_email}\n` : '') +
+           `🚚 Способ: ${deliveryType}\n` +
+           deliveryInfo +
+           (order.cutlery_count ? `🍴 Приборы: ${order.cutlery_count} шт.\n` : '') +
+           `\n📦 *Состав заказа:*\n${itemsText}\n` +
+           `💰 Сумма: ${order.subtotal_amount} ₽\n` +
+           (order.delivery_cost > 0 ? `🚚 Доставка: ${order.delivery_cost} ₽\n` : '🚚 Доставка: бесплатно\n') +
+           `💵 *Итого: ${order.total_amount} ₽*\n` +
+           `💳 Статус оплаты: ${order.payment_status || 'ожидает оплаты'}`;
   }
 }
 ```
-
-Вызывается **после** успешного INSERT, ошибка не прерывает ответ клиенту.
 
 ### Страница `public/order-success.html`
 
@@ -180,17 +325,53 @@ interface CartItem {
 
 ```sql
 CREATE TABLE IF NOT EXISTS orders (
-  id             SERIAL PRIMARY KEY,
-  customer_name  TEXT    NOT NULL,
-  customer_phone TEXT    NOT NULL,
-  customer_email TEXT,
-  items          JSONB   NOT NULL,
-  total_amount   REAL    NOT NULL,
-  pickup_type    TEXT    NOT NULL DEFAULT 'self',
-  status         TEXT    NOT NULL DEFAULT 'pending',
-  payment_url    TEXT,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                SERIAL PRIMARY KEY,
+  order_number      TEXT UNIQUE, -- формат: MOLO-YYYY-NNNN
+  customer_name     TEXT    NOT NULL,
+  customer_phone    TEXT    NOT NULL,
+  customer_email    TEXT,
+  delivery_type     TEXT    NOT NULL DEFAULT 'self', -- 'self' или 'courier'
+  delivery_address  TEXT,
+  delivery_time     TEXT    NOT NULL,
+  delivery_comment  TEXT,
+  delivery_cost     REAL    NOT NULL DEFAULT 0,
+  cutlery_count     INTEGER DEFAULT 0,
+  items             JSONB   NOT NULL,
+  subtotal_amount   REAL    NOT NULL,
+  total_amount      REAL    NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'pending', -- pending, paid, preparing, ready, delivered, picked_up, cancelled
+  payment_status    TEXT    DEFAULT 'pending', -- pending, completed, failed, refunded
+  payment_url       TEXT,
+  payment_session_id TEXT,
+  fiscal_receipt_url TEXT,
+  fiscal_receipt_id  TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS order_status_history (
+  id         SERIAL PRIMARY KEY,
+  order_id   INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+  status     TEXT NOT NULL,
+  changed_by TEXT, -- user_id или 'system'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key         TEXT PRIMARY KEY,
+  value       TEXT NOT NULL,
+  description TEXT,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Настройки по умолчанию
+INSERT INTO settings (key, value, description) VALUES
+('delivery_free_threshold', '1500', 'Минимальная сумма для бесплатной доставки'),
+('delivery_cost', '200', 'Стоимость доставки при заказе меньше порога'),
+('restaurant_open_time', '11:00', 'Время открытия ресторана'),
+('restaurant_close_time', '23:00', 'Время закрытия ресторана'),
+('preparation_time_minutes', '30', 'Стандартное время приготовления')
+ON CONFLICT (key) DO NOTHING;
 ```
 
 Миграция добавляется в `initDB()` через `CREATE TABLE IF NOT EXISTS` — идемпотентно.
@@ -339,6 +520,60 @@ value: '1' (string) или отсутствует
 
 **Validates: Requirements 7.2**
 
+### Property 22: Расчет стоимости доставки на основе порога
+
+*For any* суммы заказа (`subtotal_amount`), функция `calculateDelivery(subtotal)` должна возвращать `0` если `subtotal >= delivery_free_threshold`, иначе возвращать `delivery_cost`.
+
+**Validates: Requirements 4.5**
+
+### Property 23: Валидация обязательных полей для доставки
+
+*For any* заказа с `delivery_type = 'courier'`, функция валидации должна возвращать `false` если `delivery_address` пустое, иначе возвращать `true`.
+
+**Validates: Requirements 4.4**
+
+### Property 24: Генерация номера заказа в формате MOLO-YYYY-NNNN
+
+*For any* созданного заказа, поле `order_number` должно соответствовать формату `MOLO-{год}-{порядковый номер с ведущими нулями}`.
+
+**Validates: Requirements 6.1**
+
+### Property 25: Интеграция с Точка банк возвращает payment_url
+
+*For any* валидного заказа, вызов `PaymentService.createPayment(order)` должен возвращать объект с полями `paymentUrl` (непустая строка) и `sessionId` (непустая строка).
+
+**Validates: Requirements 5.2, 5.3**
+
+### Property 26: Обновление статуса при получении вебхука
+
+*For any* вебхука от Точка банк со статусом `SUCCESS`, функция `PaymentService.handleWebhook(webhookData)` должна обновить статус заказа на `paid` и `payment_status` на `completed`.
+
+**Validates: Requirements 5.5**
+
+### Property 27: Фискализация при успешной оплате
+
+*For any* заказа со статусом `paid`, функция `FiscalService.sendReceipt(order)` должна быть вызвана ровно один раз.
+
+**Validates: Requirements 5.6**
+
+### Property 28: Админ-панель фильтрует заказы по статусу
+
+*For any* набора заказов с разными статусами, запрос GET /admin/orders с параметром `status` должен возвращать только заказы с указанным статусом.
+
+**Validates: Requirements 8.3**
+
+### Property 29: История статусов заказа
+
+*For any* изменения статуса заказа, в таблице `order_status_history` должна создаваться запись с `order_id`, новым статусом и временем изменения.
+
+**Validates: Requirements 8.7**
+
+### Property 30: Экспорт заказов в CSV
+
+*For any* набора заказов, функция экспорта должна генерировать CSV файл с колонками: номер заказа, имя клиента, телефон, сумма, статус, время создания.
+
+**Validates: Requirements 8.9**
+
 ---
 
 ## Обработка ошибок
@@ -346,12 +581,19 @@ value: '1' (string) или отсутствует
 | Ситуация | Поведение |
 |---|---|
 | POST /api/orders — отсутствуют обязательные поля | HTTP 400, `{ error: "..." }` |
-| POST /api/orders — ошибка INSERT в БД | HTTP 500, `{ error: "..." }`, SBP_Stub не вызывается |
+| POST /api/orders — ошибка INSERT в БД | HTTP 500, `{ error: "..." }`, PaymentService не вызывается |
 | Telegram Bot API недоступен или вернул ошибку | Лог ошибки на сервере, клиент получает 201 (заказ создан) |
 | `TELEGRAM_BOT_TOKEN` не задан | Предупреждение в лог, уведомление пропускается |
 | `TELEGRAM_CHAT_ID` не задан | Предупреждение в лог, уведомление пропускается |
+| `TOCHKA_API_KEY` не задан | HTTP 500, `{ error: "Payment service unavailable" }` |
+| Точка банк API недоступен | HTTP 500, `{ error: "Payment service temporarily unavailable" }` |
+| Облачная онлайн-касса недоступна | Лог ошибки, заказ создается, фискализация откладывается |
 | localStorage недоступен (приватный режим) | CartUI работает только в памяти, без персистентности |
 | Пользователь открывает order-success.html без `?order_id` | Показывается общее сообщение «Заказ оформлен» без номера |
+| Время доставки/самовывоза вне рабочего времени | HTTP 400, `{ error: "Selected time is outside working hours" }` |
+| Сумма заказа меньше минимальной (если настроено) | HTTP 400, `{ error: "Order amount is below minimum" }` |
+| Ошибка вебхука от Точка банк | Лог ошибки, повторная попытка через 5 минут |
+| Ошибка фискализации | Лог ошибки, повторная попытка через 10 минут |
 
 Клиентские ошибки валидации формы отображаются inline рядом с полем, не через `alert()`.
 
@@ -404,8 +646,17 @@ Property 14 — fc.record(validOrderBody), проверка наличия payme
 Property 15 — fc.integer({ min: 1 }), проверка формата URL
 Property 16 — fc.array(CartItem, { minLength: 1 }), проверка пустой корзины после заказа
 Property 17 — fc.array(CartItem), round-trip items через БД
-Property 18 — fc.record(validOrderBody), проверка pickup_type='self' и status='pending'
+Property 18 — fc.record(validOrderBody), проверка delivery_type и status='pending'
 Property 19 — fc.array(validOrderBody, { minLength: 2 }), проверка сортировки
 Property 20 — fc.record(validOrderBody), проверка вызова mock Telegram API
 Property 21 — fc.record(Order), проверка наличия всех полей в formatOrderMessage()
+Property 22 — fc.float({ min: 0 }), проверка расчета стоимости доставки
+Property 23 — fc.record({ delivery_type: fc.constant('courier'), delivery_address: fc.string() }), проверка валидации
+Property 24 — fc.record(validOrderBody), проверка формата order_number
+Property 25 — fc.record(validOrderBody), проверка интеграции с Точка банк
+Property 26 — fc.record({ sessionId: fc.string(), status: fc.constant('SUCCESS') }), проверка обработки вебхука
+Property 27 — fc.record(Order, { status: fc.constant('paid') }), проверка фискализации
+Property 28 — fc.array(validOrderBody, { minLength: 3 }), проверка фильтрации в админке
+Property 29 — fc.record({ order_id: fc.integer({ min: 1 }), status: fc.string() }), проверка истории статусов
+Property 30 — fc.array(validOrderBody, { minLength: 1 }), проверка экспорта в CSV
 ```
