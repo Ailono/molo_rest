@@ -194,8 +194,19 @@ class PaymentService {
         ['paid', 'completed', order.id]
       );
       
-      // Отправить в онлайн-кассу
-      await FiscalService.sendReceipt(order);
+      // Отправить в онлайн-кассу и получить ссылку на чек
+      const fiscalResult = await FiscalService.sendReceipt(order);
+      
+      // Сохранить ссылку на фискальный чек
+      if (fiscalResult.receiptUrl) {
+        await db.query(
+          'UPDATE orders SET fiscal_receipt_url = $1 WHERE id = $2',
+          [fiscalResult.receiptUrl, order.id]
+        );
+        
+        // Отправить чек клиенту на email
+        await NotificationService.sendCustomerReceipt({...order, fiscal_receipt_url: fiscalResult.receiptUrl});
+      }
       
       // Отправить уведомление об оплате
       await NotificationService.sendPaymentNotification(order);
@@ -262,6 +273,16 @@ class NotificationService {
           return null;
         })
       );
+    
+    // Добавляем отправку email клиенту
+    if (order.customer_email) {
+      promises.push(
+        this.sendCustomerConfirmation(order).catch(error => {
+          console.error('[NotificationService] Ошибка отправки email клиенту:', error.message);
+          return null;
+        })
+      );
+    }
     
     await Promise.all(promises);
   }
@@ -346,6 +367,170 @@ class NotificationService {
       text: message,
       html: `<pre>${message}</pre>`
     });
+  }
+  
+  // Отправить email подтверждения клиенту
+  async sendCustomerConfirmation(order) {
+    if (!order.customer_email) return;
+    
+    const transporter = nodemailer.createTransport({
+      // настройки SMTP
+    });
+    
+    const emailContent = this.formatCustomerEmail(order);
+    
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: order.customer_email,
+      subject: `Подтверждение заказа #${order.id} в Molo Bistro`,
+      text: emailContent.text,
+      html: emailContent.html
+    });
+  }
+  
+  // Отправить email с фискальным чеком клиенту
+  async sendCustomerReceipt(order) {
+    if (!order.customer_email || !order.fiscal_receipt_url) return;
+    
+    const transporter = nodemailer.createTransport({
+      // настройки SMTP
+    });
+    
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: order.customer_email,
+      subject: `Чек по заказу #${order.id} в Molo Bistro`,
+      text: `Ваш чек доступен по ссылке: ${order.fiscal_receipt_url}`,
+      html: `
+        <h2>Чек по заказу #${order.id}</h2>
+        <p>Спасибо за заказ в Molo Bistro!</p>
+        <p>Ваш фискальный чек доступен по ссылке: <a href="${order.fiscal_receipt_url}">${order.fiscal_receipt_url}</a></p>
+        <p>Сумма: ${order.total_amount} ₽</p>
+        <p>Дата: ${new Date(order.created_at).toLocaleString('ru-RU')}</p>
+      `
+    });
+  }
+  
+  // Отправить уведомление клиенту о готовности/доставке
+  async sendCustomerStatusUpdate(order, status) {
+    if (!order.customer_email) return;
+    
+    const transporter = nodemailer.createTransport({
+      // настройки SMTP
+    });
+    
+    let subject, message;
+    
+    switch(status) {
+      case 'ready':
+        subject = `Заказ #${order.id} готов к выдаче`;
+        message = `Ваш заказ #${order.id} готов к самовывозу.`;
+        if (order.delivery_type === 'courier') {
+          message = `Ваш заказ #${order.id} готов к доставке. Курьер выедет в ближайшее время.`;
+        }
+        break;
+      case 'delivered':
+        subject = `Заказ #${order.id} доставлен`;
+        message = `Ваш заказ #${order.id} успешно доставлен. Приятного аппетита!`;
+        break;
+      case 'picked_up':
+        subject = `Заказ #${order.id} получен`;
+        message = `Спасибо, что выбрали Molo Bistro! Ваш заказ #${order.id} получен.`;
+        break;
+      default:
+        return;
+    }
+    
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: order.customer_email,
+      subject: subject,
+      text: message,
+      html: `<p>${message}</p>`
+    });
+  }
+  
+  // Форматировать email для клиента
+  formatCustomerEmail(order) {
+    const deliveryType = order.delivery_type === 'self' ? 'Самовывоз' : 'Доставка курьером';
+    const deliveryInfo = order.delivery_type === 'courier' ? 
+      `<p><strong>Адрес доставки:</strong> ${order.delivery_address}</p>
+       <p><strong>Время доставки:</strong> ${order.delivery_time}</p>` : 
+      `<p><strong>Время самовывоза:</strong> ${order.delivery_time}</p>`;
+    
+    let itemsHtml = '<table style="width:100%; border-collapse: collapse; margin: 20px 0;">';
+    itemsHtml += '<tr style="background-color: #f2f2f2;"><th style="padding: 10px; text-align: left;">Блюдо</th><th style="padding: 10px; text-align: left;">Кол-во</th><th style="padding: 10px; text-align: left;">Цена</th><th style="padding: 10px; text-align: left;">Сумма</th></tr>';
+    
+    JSON.parse(order.items).forEach(item => {
+      itemsHtml += `
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${item.name}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${item.quantity}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${item.price} ₽</td>
+          <td style="padding: 10px; border-bottom: 1px solid #ddd;">${item.price * item.quantity} ₽</td>
+        </tr>
+      `;
+    });
+    
+    itemsHtml += '</table>';
+    
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #333;">Подтверждение заказа #${order.id}</h1>
+        <p>Здравствуйте, ${order.customer_name}!</p>
+        <p>Благодарим за заказ в Molo Bistro.</p>
+        
+        <h2 style="color: #555;">Детали заказа</h2>
+        <p><strong>Номер заказа:</strong> ${order.id}</p>
+        <p><strong>Имя:</strong> ${order.customer_name}</p>
+        <p><strong>Телефон:</strong> ${order.customer_phone}</p>
+        <p><strong>Способ получения:</strong> ${deliveryType}</p>
+        ${deliveryInfo}
+        
+        <h2 style="color: #555;">Состав заказа</h2>
+        ${itemsHtml}
+        
+        <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 20px;">
+          <p><strong>Сумма заказа:</strong> ${order.subtotal_amount} ₽</p>
+          ${order.delivery_cost > 0 ? `<p><strong>Доставка:</strong> ${order.delivery_cost} ₽</p>` : '<p><strong>Доставка:</strong> бесплатно</p>'}
+          <p style="font-size: 18px; font-weight: bold;"><strong>Итого к оплате:</strong> ${order.total_amount} ₽</p>
+        </div>
+        
+        <p style="margin-top: 30px;">Вы можете отслеживать статус заказа по ссылке: 
+          <a href="${process.env.BASE_URL}/order-status?order_id=${order.id}">${process.env.BASE_URL}/order-status?order_id=${order.id}</a>
+        </p>
+        
+        <p style="margin-top: 20px; color: #666;">
+          С уважением,<br>
+          Команда Molo Bistro
+        </p>
+      </div>
+    `;
+    
+    const text = `Подтверждение заказа #${order.id}
+Здравствуйте, ${order.customer_name}!
+Благодарим за заказ в Molo Bistro.
+
+Детали заказа:
+Номер заказа: ${order.id}
+Имя: ${order.customer_name}
+Телефон: ${order.customer_phone}
+Способ получения: ${deliveryType}
+${order.delivery_type === 'courier' ? `Адрес доставки: ${order.delivery_address}\nВремя доставки: ${order.delivery_time}` : `Время самовывоза: ${order.delivery_time}`}
+
+Состав заказа:
+${JSON.parse(order.items).map(item => `${item.name} x${item.quantity} = ${item.price * item.quantity} ₽`).join('\n')}
+
+Сумма заказа: ${order.subtotal_amount} ₽
+${order.delivery_cost > 0 ? `Доставка: ${order.delivery_cost} ₽` : 'Доставка: бесплатно'}
+Итого к оплате: ${order.total_amount} ₽
+
+Отслеживать статус заказа: ${process.env.BASE_URL}/order-status?order_id=${order.id}
+
+С уважением,
+Команда Molo Bistro`;
+    
+    return { html, text };
   }
   
   // Форматировать сообщение о заказе
@@ -669,6 +854,30 @@ value: '1' (string) или отсутствует
 *For any* заказа, статус которого меняется на `paid`, функция `NotificationService.sendPaymentNotification(order)` должна быть вызвана через все настроенные каналы (кроме email).
 
 **Validates: Requirements 7.7**
+
+### Property 34: Email подтверждения отправляется клиенту при создании заказа
+
+*For any* заказа с указанным email клиента, функция `NotificationService.sendCustomerConfirmation(order)` должна быть вызвана ровно один раз.
+
+**Validates: Requirements 7.11**
+
+### Property 35: Фискальный чек отправляется клиенту после оплаты
+
+*For any* оплаченного заказа с фискальным чеком и email клиента, функция `NotificationService.sendCustomerReceipt(order)` должна быть вызвана ровно один раз.
+
+**Validates: Requirements 7.13**
+
+### Property 36: Email уведомления содержат все обязательные поля
+
+*For any* заказа, email подтверждения должен содержать: номер заказа, имя клиента, состав заказа, итоговую сумму, способ получения и ссылку на статус заказа.
+
+**Validates: Requirements 7.12**
+
+### Property 37: Уведомления о готовности/доставке отправляются клиенту
+
+*For any* заказа, статус которого меняется на `ready` или `delivered` с указанным email клиента, функция `NotificationService.sendCustomerStatusUpdate(order, status)` должна быть вызвана.
+
+**Validates: Requirements 7.14**
 
 ---
 
