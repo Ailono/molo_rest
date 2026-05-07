@@ -64,20 +64,20 @@ Implementation uses TypeScript for type safety matching the design specification
     - **Validates: Requirements 4.4**
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
 
-- [-] 8. Implement PaymentService - Refund
+- [x] 8. Implement PaymentService - Refund
   - [x] 8.1 Implement refundPayment() method
-  - [ ] 8.2 Handle full vs partial refund logic
-  - [ ] 8.3 Update order status to refunded/partial_refunded
-  - [ ] 8.4 Add 90-day warning check
+  - [x] 8.2 Handle full vs partial refund logic
+  - [x] 8.3 Update order status to refunded/partial_refunded
+  - [x] 8.4 Add 90-day warning check
   - [ ]* 8.5 Write property test for Refund Status Mapping
     - **Property 3: Refund Status Mapping**
     - **Validates: Requirements 5.6**
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9_
 
-- [ ] 9. Implement FiscalService for receipts
-  - [ ] 9.1 Create FiscalService class
-  - [ ] 9.2 Implement sendReceipt() method with 54-ФЗ format
-  - [ ] 9.3 Implement getReceiptStatus() method
+- [-] 9. Implement FiscalService for receipts
+  - [x] 9.1 Create FiscalService class
+  - [x] 9.2 Implement sendReceipt() method with 54-ФЗ format
+  - [x] 9.3 Implement getReceiptStatus() method
   - [ ] 9.4 Create receipt data serialization from order
   - [ ]* 9.5 Write property test for Receipt Data Completeness
     - **Property 4: Receipt Data Completeness**
