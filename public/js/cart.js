@@ -235,6 +235,10 @@
     // Получить способ получения
     const deliveryTypeEl = document.querySelector('input[name="delivery_type"]:checked');
     const delivery_type = deliveryTypeEl ? deliveryTypeEl.value : 'self';
+    
+    // Получить способ оплаты
+    const paymentMethodEl = document.querySelector('input[name="payment_method"]:checked');
+    const payment_method = paymentMethodEl ? paymentMethodEl.value : 'cash';
 
     // Для доставки обязателен адрес
     let address = '';
@@ -282,6 +286,7 @@
       customer_name: name,
       customer_phone: phone,
       delivery_type,
+      payment_method,
       items,
       total_amount,
       delivery_cost,
@@ -335,7 +340,15 @@
 
       const data = await res.json();
       window.CartUI.clear();
-      window.location.href = `/order-success.html?order_id=${data.order_id}`;
+      
+      // Handle payment redirect if payment_url is provided (Tochka integration)
+      if (data.payment_url) {
+        // Redirect to Tochka payment page
+        window.location.href = data.payment_url;
+      } else {
+        // No online payment - go to success page
+        window.location.href = `/order-success.html?order_id=${data.order_id}`;
+      }
     } catch (e) {
       if (errMsg) {
         errMsg.textContent = e.message || 'Не удалось оформить заказ. Попробуйте ещё раз.';

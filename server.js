@@ -1822,21 +1822,15 @@ app.post('/api/orders', async (req, res) => {
     
     // Create payment session if needed
     let paymentUrl = null;
-    let sessionId = null;
-    
-    if (payment_method && payment_method !== 'cash') {
-      const payment = PaymentService.createPayment(finalTotal, 0);
-      paymentUrl = payment.paymentUrl;
-      sessionId = payment.sessionId;
-    }
+    let paymentOperationId = null;
     
     const { rows } = await pool.query(
       `INSERT INTO orders (
         customer_name, customer_phone, customer_email, items, total_amount,
         delivery_type, delivery_address, delivery_time, pickup_time, delivery_comment,
-        items_count, order_number, tableware_count, session_id, payment_method,
-        delivery_cost, payment_url
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
+        items_count, order_number, tableware_count, payment_method,
+        delivery_cost
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
       [
         customer_name, 
         customer_phone, 
@@ -1851,26 +1845,35 @@ app.post('/api/orders', async (req, res) => {
         itemsCount,
         orderNumber,
         tableware_count || 1,
-        sessionId,
         payment_method || null,
-        deliveryCost,
-        paymentUrl
+        deliveryCost
       ]
     );
     
     const order = rows[0];
     
-    // Update payment URL with actual order ID if needed
-    if (paymentUrl && sessionId) {
-      const updatedPayment = PaymentService.createPayment(finalTotal, order.id);
-      paymentUrl = updatedPayment.paymentUrl;
-      sessionId = updatedPayment.sessionId;
-      await pool.query(
-        'UPDATE orders SET payment_url = $1, session_id = $2 WHERE id = $3',
-        [paymentUrl, sessionId, order.id]
-      );
-      order.payment_url = paymentUrl;
-      order.session_id = sessionId;
+    // Create Tochka payment if needed
+    if (payment_method && payment_method !== 'cash') {
+      // Initialize PaymentService if needed
+      const paymentService = createPaymentService();
+      if (paymentService) {
+        const paymentResult = await paymentService.createPaymentOperation(order);
+        
+        if (paymentResult.success) {
+          paymentUrl = paymentResult.paymentUrl;
+          paymentOperationId = paymentResult.paymentOperationId;
+          
+          await pool.query(
+            'UPDATE orders SET payment_url = $1, payment_operation_id = $2 WHERE id = $3',
+            [paymentUrl, paymentOperationId, order.id]
+          );
+          
+          order.payment_url = paymentUrl;
+          order.payment_operation_id = paymentOperationId;
+        } else {
+          console.error('[OrderAPI] Failed to create payment:', paymentResult.error);
+        }
+      }
     }
     
     // Send notifications to admin via all enabled channels
@@ -1880,7 +1883,7 @@ app.post('/api/orders', async (req, res) => {
       order_id: order.id, 
       order_number: order.order_number,
       payment_url: paymentUrl,
-      session_id: sessionId,
+      payment_operation_id: paymentOperationId,
       total_amount: finalTotal,
       delivery_cost: deliveryCost
     });
@@ -2290,3 +2293,262 @@ function pickLogoPath() {
   }
   return null;
 }
+});
+
+// ── Tochka Payment API Endpoints (Task 14) ─────────────────────────────────
+
+/**
+ * GET /api/payment/operations - Get list of payment operations
+ * Query: dateFrom, dateTo, status, page, limit
+ */
+app.get('/api/payment/operations', adminAuth, async (req, res) => {
+  try {
+    const { dateFrom, dateTo, status, page = 1, limit = 20 } = req.query;
+    
+    // Initialize PaymentService if needed
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const filters = {
+      dateFrom,
+      dateTo,
+      status,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    };
+    
+    const result = await paymentService.getPaymentOperations(filters);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to get payment operations' });
+    }
+    
+    res.json({
+      operations: result.operations,
+      total: result.total,
+      page: result.page,
+      limit: result.limit
+    });
+  } catch (error) {
+    console.error('[PaymentAPI] Get operations error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/payment/operations/:id - Get payment operation details
+ */
+app.get('/api/payment/operations/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'Payment operation ID required' });
+    }
+    
+    // Initialize PaymentService if needed
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const result = await paymentService.getPaymentOperation(id);
+    
+    if (!result.success) {
+      if (result.error?.includes('not found')) {
+        return res.status(404).json({ error: 'Payment operation not found' });
+      }
+      return res.status(500).json({ error: result.error || 'Failed to get payment operation' });
+    }
+    
+    res.json(result.info);
+  } catch (error) {
+    console.error('[PaymentAPI] Get operation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/payment/operations/:id/capture - Capture payment (full or partial)
+ * Body: { amount?: number }
+ */
+app.post('/api/payment/operations/:id/capture', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'Payment operation ID required' });
+    }
+    
+    // Initialize PaymentService if needed
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const result = await paymentService.capturePayment(id, amount);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to capture payment' });
+    }
+    
+    // Update order status in database
+    try {
+      const { rows } = await pool.query(
+        'SELECT id FROM orders WHERE payment_operation_id = $1',
+        [id]
+      );
+      
+      if (rows.length > 0) {
+        const orderId = rows[0].id;
+        await pool.query(
+          'UPDATE orders SET payment_status = $1, status = $2, captured_at = NOW() WHERE id = $3',
+          ['captured', 'paid', orderId]
+        );
+        
+        // Add status history
+        await pool.query(
+          'INSERT INTO order_status_history (order_id, old_status, new_status, changed_by) VALUES ($1, $2, $3, $4)',
+          [orderId, 'paid', 'captured', ADMIN_LOGIN]
+        );
+      }
+    } catch (dbError) {
+      console.error('[PaymentAPI] Database update error after capture:', dbError);
+    }
+    
+    res.json({
+      success: true,
+      status: result.status,
+      capturedAmount: result.capturedAmount
+    });
+  } catch (error) {
+    console.error('[PaymentAPI] Capture error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/payment/operations/:id/refund - Refund payment
+ * Body: { amount: number, reason?: string }
+ */
+app.post('/api/payment/operations/:id/refund', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'Payment operation ID required' });
+    }
+    
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valid refund amount required' });
+    }
+    
+    // Initialize PaymentService if needed
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const result = await paymentService.refundPayment(id, amount, reason);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to refund payment' });
+    }
+    
+    // Update order status in database
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, total_amount FROM orders WHERE payment_operation_id = $1',
+        [id]
+      );
+      
+      if (rows.length > 0) {
+        const order = rows[0];
+        const orderId = order.id;
+        const isFullRefund = amount >= order.total_amount;
+        const newPaymentStatus = isFullRefund ? 'refunded' : 'partial_refunded';
+        const newOrderStatus = isFullRefund ? 'refunded' : 'partial_refunded';
+        
+        await pool.query(
+          `UPDATE orders SET 
+            payment_status = $1, 
+            status = $2, 
+            refunded_at = NOW(),
+            refund_amount = COALESCE(refund_amount, 0) + $3
+          WHERE id = $4`,
+          [newPaymentStatus, newOrderStatus, amount, orderId]
+        );
+        
+        // Add status history
+        await pool.query(
+          'INSERT INTO order_status_history (order_id, old_status, new_status, changed_by) VALUES ($1, $2, $3, $4)',
+          [orderId, 'paid', newPaymentStatus, ADMIN_LOGIN]
+        );
+        
+        // Send refund receipt
+        try {
+          const fiscalResult = await FiscalService.sendRefundReceipt(order, amount);
+          if (fiscalResult.success) {
+            await pool.query(
+              'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
+              [fiscalResult.receiptId, fiscalResult.receiptUrl, 'refund_sent', orderId]
+            );
+          }
+        } catch (fiscalError) {
+          console.error('[PaymentAPI] Refund receipt error:', fiscalError);
+        }
+      }
+    } catch (dbError) {
+      console.error('[PaymentAPI] Database update error after refund:', dbError);
+    }
+    
+    res.json({
+      success: true,
+      status: result.status,
+      refundId: result.refundId
+    });
+  } catch (error) {
+    console.error('[PaymentAPI] Refund error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/payment/registry - Get payment registry for date range
+ * Query: dateFrom, dateTo, status
+ */
+app.get('/api/payment/registry', adminAuth, async (req, res) => {
+  try {
+    const { dateFrom, dateTo, status } = req.query;
+    
+    if (!dateFrom || !dateTo) {
+      return res.status(400).json({ error: 'dateFrom and dateTo parameters required' });
+    }
+    
+    // Initialize PaymentService if needed
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const result = await paymentService.getPaymentRegistry(dateFrom, dateTo, status);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to get payment registry' });
+    }
+    
+    res.json({
+      registry: result.registry,
+      totals: result.totals
+    });
+  } catch (error) {
+    console.error('[PaymentAPI] Get registry error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Image upload → Cloudinary

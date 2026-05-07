@@ -1,4 +1,4 @@
-# Implementation Plan: Tochka Payment Integration
+ььььььь# Implementation Plan: Tochka Payment Integration
 
 ## Overview
 
@@ -8,38 +8,38 @@ Implementation uses TypeScript for type safety matching the design specification
 
 ## Tasks
 
-- [ ] 1. Set up project structure and configuration
-  - [ ] 1.1 Create TypeScript configuration (tsconfig.json)
-  - [ ] 1.2 Set up environment variables structure for Tochka API credentials
-  - [ ] 1.3 Create src/payment/ directory structure
-  - [ ] 1.4 Configure logging and error tracking
+- [x] 1. Set up project structure and configuration
+  - [x] 1.1 Create TypeScript configuration (tsconfig.json)
+  - [x] 1.2 Set up environment variables structure for Tochka API credentials
+  - [x] 1.3 Create src/payment/ directory structure
+  - [x] 1.4 Configure logging and error tracking
   - _Requirements: 9.1, 9.3, 9.4_
 
-- [ ] 2. Implement core TypeScript interfaces and types
-  - [ ] 2.1 Define PaymentServiceConfig interface
-  - [ ] 2.2 Define PaymentResult, PaymentError, PaymentInfo interfaces
-  - [ ] 2.3 Define PaymentStatus type with all states
-  - [ ] 2.4 Define ReceiptData and ReceiptItem interfaces
-  - [ ] 2.5 Define RegistryEntry and RegistryTotals interfaces
+- [x] 2. Implement core TypeScript interfaces and types
+  - [x] 2.1 Define PaymentServiceConfig interface
+  - [x] 2.2 Define PaymentResult, PaymentError, PaymentInfo interfaces
+  - [x] 2.3 Define PaymentStatus type with all states
+  - [x] 2.4 Define ReceiptData and ReceiptItem interfaces
+  - [x] 2.5 Define RegistryEntry and RegistryTotals interfaces
   - _Requirements: Design section "Components and Interfaces"_
 
-- [ ] 3. Implement Token Manager
-  - [ ] 3.1 Create TokenManager class with OAuth token handling
-  - [ ] 3.2 Implement getAccessToken() with automatic refresh
-  - [ ] 3.3 Implement token validation and caching
+- [x] 3. Implement Token Manager
+  - [x] 3.1 Create TokenManager class with OAuth token handling
+  - [x] 3.2 Implement getAccessToken() with automatic refresh
+  - [x] 3.3 Implement token validation and caching
   - _Requirements: 9.1, 9.2, 9.6_
 
-- [ ] 4. Implement Circuit Breaker
-  - [ ] 4.1 Create CircuitBreaker class with CLOSED/OPEN/HALF_OPEN states
-  - [ ] 4.2 Implement success/failure tracking with 5-error threshold
-  - [ ] 4.3 Implement 30-second recovery timeout
+- [x] 4. Implement Circuit Breaker
+  - [x] 4.1 Create CircuitBreaker class with CLOSED/OPEN/HALF_OPEN states
+  - [x] 4.2 Implement success/failure tracking with 5-error threshold
+  - [x] 4.3 Implement 30-second recovery timeout
   - _Requirements: 10.5_
 
 - [x] 5. Implement PaymentService - Create Payment
-  - [ ] 5.1 Create PaymentService class with HTTP client
-  - [ ] 5.2 Implement createPaymentOperation() method
-  - [ ] 5.3 Implement retry logic with exponential backoff (max 3 retries)
-  - [ ] 5.4 Parse payment_operation_id and payment_url from API response
+  - [x] 5.1 Create PaymentService class with HTTP client
+  - [x] 5.2 Implement createPaymentOperation() method
+  - [x] 5.3 Implement retry logic with exponential backoff (max 3 retries)
+  - [x] 5.4 Parse payment_operation_id and payment_url from API response
   - [ ]* 5.5 Write property test for Payment URL Generation
     - **Property 1: Payment URL Generation**
     - **Validates: Requirements 1.5**
@@ -48,24 +48,24 @@ Implementation uses TypeScript for type safety matching the design specification
     - **Validates: Requirements 1.4**
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8_
 
-- [ ] 6. Implement PaymentService - Get Payment Info
-  - [ ] 6.1 Implement getPaymentOperation() method
-  - [ ] 6.2 Implement getPaymentOperations() with filtering and pagination
+- [x] 6. Implement PaymentService - Get Payment Info
+  - [x] 6.1 Implement getPaymentOperation() method
+  - [x] 6.2 Implement getPaymentOperations() with filtering and pagination
   - [ ]* 6.3 Write property test for Payment Info mapping
     - **Validates: Requirements 3.3**
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 7. Implement PaymentService - Capture
-  - [ ] 7.1 Implement capturePayment() method
-  - [ ] 7.2 Handle partial capture scenarios
-  - [ ] 7.3 Update order status in database after successful capture
+- [x] 7. Implement PaymentService - Capture
+  - [x] 7.1 Implement capturePayment() method
+  - [x] 7.2 Handle partial capture scenarios
+  - [x] 7.3 Update order status in database after successful capture
   - [ ]* 7.4 Write property test for Payment Status After Capture
     - **Property 2: Payment Status After Capture**
     - **Validates: Requirements 4.4**
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
 
-- [ ] 8. Implement PaymentService - Refund
-  - [ ] 8.1 Implement refundPayment() method
+- [-] 8. Implement PaymentService - Refund
+  - [x] 8.1 Implement refundPayment() method
   - [ ] 8.2 Handle full vs partial refund logic
   - [ ] 8.3 Update order status to refunded/partial_refunded
   - [ ] 8.4 Add 90-day warning check
@@ -113,11 +113,11 @@ Implementation uses TypeScript for type safety matching the design specification
   - [ ] 13.2 Create migration script with IF NOT EXISTS
   - _Requirements: 11.1_
 
-- [ ] 14. Extend OrderAPI endpoints
-  - [ ] 14.1 Add GET /api/payment/operations endpoint
-  - [ ] 14.2 Add GET /api/payment/operations/:id endpoint
-  - [ ] 14.3 Add POST /api/payment/operations/:id/capture endpoint
-  - [ ] 14.4 Add POST /api/payment/operations/:id/refund endpoint
+- [-] 14. Extend OrderAPI endpoints
+  - [x] 14.1 Add GET /api/payment/operations endpoint
+  - [x] 14.2 Add GET /api/payment/operations/:id endpoint
+  - [x] 14.3 Add POST /api/payment/operations/:id/capture endpoint
+  - [x] 14.4 Add POST /api/payment/operations/:id/refund endpoint
   - [ ] 14.5 Add GET /api/payment/registry endpoint
   - _Requirements: 2.1, 3.1, 4.1, 5.1, 7.1_
 
