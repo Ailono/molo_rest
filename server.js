@@ -100,31 +100,966 @@ async function initDB() {
   console.log('БД инициализирована');
 }
 
-// ── PaymentService (stub for Tochka Bank integration) ─────────────────────
-const PaymentService = {
+// ── Tochka Bank Configuration ───────────────────────────────────────────────
+const TOCHKA_CONFIG = {
+  environment: process.env.TOCHKA_ENV || 'sandbox',
+  clientId: process.env.TOCHKA_CLIENT_ID,
+  clientSecret: process.env.TOCHKA_CLIENT_SECRET,
+  refreshToken: process.env.TOCHKA_REFRESH_TOKEN,
+  apiUrl: process.env.TOCHKA_ENV === 'production' 
+    ? 'https://enter.tochka.com' 
+    : 'https://sandbox.enter.tochka.com',
+  apiTimeout: parseInt(process.env.TOCHKA_TIMEOUT) || 30000,
+  maxRetries: parseInt(process.env.TOCHKA_MAX_RETRIES) || 3,
+  webhookSecret: process.env.TOCHKA_WEBHOOK_SECRET
+};
+
+// ── TokenManager for OAuth ─────────────────────────────────────────────────
+class TokenManager {
+  constructor(config) {
+    this.config = config;
+    this.accessToken = null;
+    this.tokenExpiresAt = null;
+    this.refreshInProgress = false;
+    this.refreshPromise = null;
+  }
+
   /**
-   * Create payment session
-   * @param {number} amount - Payment amount in rubles
-   * @param {number} orderId - Order ID
-   * @returns {{ paymentUrl: string, sessionId: string }}
+   * Get valid access token, refreshing if needed
+   * @returns {Promise<string>} Valid access token
    */
-  createPayment(amount, orderId) {
-    // Stub implementation - in production, this would call Tochka Bank API
-    const sessionId = `session_${orderId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const paymentUrl = `https://payment.tochka.com/pay/${sessionId}`;
-    return { paymentUrl, sessionId };
-  },
-  
+  async getAccessToken() {
+    // Check if current token is valid
+    if (this.accessToken && this.tokenExpiresAt && Date.now() < this.tokenExpiresAt - 60000) {
+      return this.accessToken;
+    }
+
+    // Prevent multiple concurrent refreshes
+    if (this.refreshInProgress && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshInProgress = true;
+    this.refreshPromise = this._refreshToken();
+    
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshInProgress = false;
+      this.refreshPromise = null;
+    }
+  }
+
   /**
-   * Check payment status
-   * @param {string} sessionId - Payment session ID
-   * @returns {{ status: string }} - 'pending', 'completed', 'failed'
+   * Refresh access token using refresh token
+   * @private
    */
-  checkPayment(sessionId) {
-    // Stub implementation - in production, this would call Tochka Bank API
-    return { status: 'pending' };
+  async _refreshToken() {
+    if (!this.config.clientId || !this.config.clientSecret || !this.config.refreshToken) {
+      throw new Error('Tochka API credentials not configured');
+    }
+
+    console.log('[TokenManager] Refreshing access token...');
+
+    try {
+      const response = await fetch(`${this.config.apiUrl}/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+          refresh_token: this.config.refreshToken
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Token refresh failed: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      this.accessToken = data.access_token;
+      // Set expiry with 60 second buffer
+      this.tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+
+      console.log('[TokenManager] Access token refreshed successfully');
+      
+      return this.accessToken;
+    } catch (error) {
+      console.error('[TokenManager] Token refresh error:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if token is valid
+   * @returns {boolean}
+   */
+  isTokenValid() {
+    return !!(this.accessToken && this.tokenExpiresAt && Date.now() < this.tokenExpiresAt);
+  }
+
+  /**
+   * Clear cached token (force refresh on next call)
+   */
+  clearToken() {
+    this.accessToken = null;
+    this.tokenExpiresAt = null;
+  }
+}
+
+// ── Circuit Breaker ────────────────────────────────────────────────────────
+class CircuitBreaker {
+  constructor(options = {}) {
+    this.failureThreshold = options.failureThreshold || 5;
+    this.recoveryTimeout = options.recoveryTimeout || 30000; // 30 seconds
+    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.failureCount = 0;
+    this.lastFailureTime = null;
+    this.name = options.name || 'default';
+  }
+
+  /**
+   * Execute function with circuit breaker protection
+   * @param {Function} fn - Function to execute
+   * @returns {Promise<any>} Result of function execution
+   */
+  async execute(fn) {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime >= this.recoveryTimeout) {
+        console.log(`[CircuitBreaker:${this.name}] Transitioning to HALF_OPEN`);
+        this.state = 'HALF_OPEN';
+      } else {
+        throw new Error(`Circuit breaker OPEN for ${this.name}`);
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.recordSuccess();
+      return result;
+    } catch (error) {
+      this.recordFailure();
+      throw error;
+    }
+  }
+
+  /**
+   * Record successful execution
+   */
+  recordSuccess() {
+    this.failureCount = 0;
+    if (this.state === 'HALF_OPEN') {
+      console.log(`[CircuitBreaker:${this.name}] Closing circuit after successful request`);
+      this.state = 'CLOSED';
+    }
+  }
+
+  /**
+   * Record failed execution
+   */
+  recordFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+
+    if (this.failureCount >= this.failureThreshold) {
+      if (this.state !== 'OPEN') {
+        console.log(`[CircuitBreaker:${this.name}] Opening circuit after ${this.failureCount} failures`);
+        this.state = 'OPEN';
+      }
+    }
+  }
+
+  /**
+   * Get current state
+   * @returns {string}
+   */
+  getState() {
+    return this.state;
+  }
+
+  /**
+   * Reset circuit breaker
+   */
+  reset() {
+    this.state = 'CLOSED';
+    this.failureCount = 0;
+    this.lastFailureTime = null;
+  }
+}
+
+// ── Error Classification ───────────────────────────────────────────────────
+class PaymentError extends Error {
+  constructor(code, message, details = null) {
+    super(message);
+    this.name = 'PaymentError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const ErrorClassifier = {
+  classify(error) {
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data || {};
+
+      switch (status) {
+        case 400:
+          return new PaymentError(
+            'VALIDATION_ERROR',
+            data.message || 'Invalid request parameters',
+            { status, ...data }
+          );
+        case 401:
+          return new PaymentError(
+            'AUTH_ERROR',
+            data.message || 'Authentication failed - token may be expired',
+            { status, ...data }
+          );
+        case 403:
+          return new PaymentError(
+            'AUTH_ERROR',
+            data.message || 'Access forbidden',
+            { status, ...data }
+          );
+        case 404:
+          return new PaymentError(
+            'NOT_FOUND',
+            data.message || 'Payment operation not found',
+            { status, ...data }
+          );
+        case 422:
+          return new PaymentError(
+            'BUSINESS_ERROR',
+            data.message || 'Business logic error',
+            { status, ...data }
+          );
+        case 500:
+        case 502:
+        case 503:
+          return new PaymentError(
+            'NETWORK_ERROR',
+            data.message || 'Payment provider temporarily unavailable',
+            { status, ...data }
+          );
+        default:
+          return new PaymentError(
+            'INTERNAL_ERROR',
+            data.message || 'Unexpected error',
+            { status, ...data }
+          );
+      }
+    }
+
+    if (error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return new PaymentError('NETWORK_ERROR', 'Network connection failed', { code: error.code });
+    }
+
+    return new PaymentError('INTERNAL_ERROR', error.message || 'Unknown error');
   }
 };
+
+// ── PaymentService with Tochka Bank Integration ────────────────────────────
+class TochkaPaymentService {
+  constructor(config, pool) {
+    this.config = config;
+    this.pool = pool;
+    this.tokenManager = new TokenManager(config);
+    this.circuitBreaker = new CircuitBreaker({ name: 'TochkaPayment', failureThreshold: 5, recoveryTimeout: 30000 });
+    
+    // Idempotency cache for webhooks
+    this.processedWebhooks = new Map();
+    this.webhookCleanupInterval = null;
+    this._startWebhookCleanup();
+  }
+
+  /**
+   * Start cleanup interval for processed webhooks
+   * @private
+   */
+  _startWebhookCleanup() {
+    // Clean up processed webhooks every 5 minutes
+    this.webhookCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, timestamp] of this.processedWebhooks.entries()) {
+        if (now - timestamp > 300000) { // 5 minutes
+          this.processedWebhooks.delete(key);
+        }
+      }
+    }, 60000);
+  }
+
+  /**
+   * Make HTTP request with retry and circuit breaker
+   * @private
+   */
+  async _makeRequest(method, path, body = null) {
+    const maxRetries = this.config.maxRetries || 3;
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.circuitBreaker.execute(async () => {
+          const token = await this.tokenManager.getAccessToken();
+          
+          const options = {
+            method,
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          };
+
+          if (body) {
+            options.body = JSON.stringify(body);
+          }
+
+          const url = `${this.config.apiUrl}${path}`;
+          console.log(`[PaymentService] ${method} ${path}`);
+
+          const response = await fetch(url, options);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            
+            // If 401, force token refresh and retry
+            if (response.status === 401 && attempt < maxRetries) {
+              this.tokenManager.clearToken();
+              throw new Error('Token expired, will retry');
+            }
+
+            const error = new Error(errorData.message || `HTTP ${response.status}`);
+            error.response = { status: response.status, data: errorData };
+            throw error;
+          }
+
+          return response.json();
+        });
+
+        return result;
+      } catch (error) {
+        lastError = error;
+        console.error(`[PaymentService] Attempt ${attempt} failed:`, error.message);
+
+        // Don't retry if circuit is open
+        if (error.message.includes('Circuit breaker OPEN')) {
+          throw ErrorClassifier.classify(lastError);
+        }
+
+        // Don't retry on certain errors
+        if (error.response && [400, 401, 403, 404, 422].includes(error.response.status)) {
+          throw ErrorClassifier.classify(error);
+        }
+
+        // Exponential backoff
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw ErrorClassifier.classify(lastError);
+  }
+
+  /**
+   * Create payment operation
+   * @param {object} order - Order object
+   * @returns {Promise<{success: boolean, paymentOperationId?: string, paymentUrl?: string, error?: string}>}
+   */
+  async createPaymentOperation(order) {
+    try {
+      if (!this.config.clientId || !this.config.clientSecret) {
+        // Fallback to stub for development
+        console.log('[PaymentService] Using stub implementation - credentials not configured');
+        return this._createStubPayment(order);
+      }
+
+      const payload = {
+        amount: parseFloat(order.total_amount),
+        currency: 'RUB',
+        description: `Заказ ${order.order_number}`,
+        redirect_url: `${process.env.BASE_URL || 'https://molobistro.ru'}/order-success.html`,
+        callback_url: `${process.env.BASE_URL || 'https://molobistro.ru'}/api/payment/webhook`,
+        custom_fields: {
+          order_id: order.id.toString(),
+          order_number: order.order_number
+        }
+      };
+
+      console.log('[PaymentService] Creating payment operation:', JSON.stringify(payload, null, 2));
+
+      const result = await this._makeRequest('POST', '/api/v1/payments', payload);
+
+      const paymentOperationId = result.payment_operation_id;
+      const paymentUrl = result.payment_url;
+
+      // Save payment_operation_id to order
+      await this.pool.query(
+        'UPDATE orders SET payment_operation_id = $1 WHERE id = $2',
+        [paymentOperationId, order.id]
+      );
+
+      console.log('[PaymentService] Payment created:', paymentOperationId);
+
+      return {
+        success: true,
+        paymentOperationId,
+        paymentUrl
+      };
+    } catch (error) {
+      console.error('[PaymentService] Create payment error:', error.message);
+      return {
+        success: false,
+        error: error.message || 'Failed to create payment'
+      };
+    }
+  }
+
+  /**
+   * Stub payment creation for development
+   * @private
+   */
+  _createStubPayment(order) {
+    const paymentOperationId = `po_${order.id}_${Date.now()}`;
+    const paymentUrl = `https://payment.tochka.com/pay/${paymentOperationId}`;
+
+    return {
+      success: true,
+      paymentOperationId,
+      paymentUrl
+    };
+  }
+
+  /**
+   * Get payment operation status
+   * @param {string} paymentOperationId - Payment operation ID
+   * @returns {Promise<{success: boolean, info?: object, error?: string}>}
+   */
+  async getPaymentOperation(paymentOperationId) {
+    try {
+      if (!this.config.clientId || !this.config.clientSecret) {
+        return this._getStubPaymentInfo(paymentOperationId);
+      }
+
+      const result = await this._makeRequest('GET', `/api/v1/payments/${paymentOperationId}`);
+
+      return {
+        success: true,
+        info: this._mapPaymentInfo(result)
+      };
+    } catch (error) {
+      console.error('[PaymentService] Get payment error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get list of payment operations
+   * @param {object} filters - Filter parameters
+   * @returns {Promise<{success: boolean, operations?: array, total?: number, error?: string}>}
+   */
+  async getPaymentOperations(filters = {}) {
+    try {
+      const { dateFrom, dateTo, status, page = 1, limit = 20 } = filters;
+
+      if (!this.config.clientId || !this.config.clientSecret) {
+        return this._getStubPaymentList(filters);
+      }
+
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      if (status) params.append('status', status);
+      params.append('page', page.toString());
+      params.append('limit', limit.toString());
+
+      const result = await this._makeRequest('GET', `/api/v1/payments?${params}`);
+
+      return {
+        success: true,
+        operations: (result.payments || []).map(p => this._mapPaymentInfo(p)),
+        total: result.total || result.payments?.length || 0,
+        page,
+        limit
+      };
+    } catch (error) {
+      console.error('[PaymentService] Get payments error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Capture payment (full or partial)
+   * @param {string} paymentOperationId - Payment operation ID
+   * @param {number} [amount] - Optional amount for partial capture
+   * @returns {Promise<{success: boolean, status?: string, error?: string}>}
+   */
+  async capturePayment(paymentOperationId, amount = null) {
+    try {
+      if (!this.config.clientId || !this.config.clientSecret) {
+        return this._stubCapture(paymentOperationId, amount);
+      }
+
+      const body = {};
+      if (amount !== null) {
+        body.amount = parseFloat(amount);
+      }
+
+      const result = await this._makeRequest(
+        'POST',
+        `/api/v1/payments/${paymentOperationId}/capture`,
+        body
+      );
+
+      return {
+        success: true,
+        status: result.status || 'captured',
+        capturedAmount: result.amount
+      };
+    } catch (error) {
+      console.error('[PaymentService] Capture error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Refund payment
+   * @param {string} paymentOperationId - Payment operation ID
+   * @param {number} amount - Refund amount
+   * @param {string} [reason] - Refund reason
+   * @returns {Promise<{success: boolean, status?: string, error?: string}>}
+   */
+  async refundPayment(paymentOperationId, amount, reason = null) {
+    try {
+      if (!this.config.clientId || !this.config.clientSecret) {
+        return this._stubRefund(paymentOperationId, amount);
+      }
+
+      // Check if refund is within 90 days
+      const paymentInfo = await this.getPaymentOperation(paymentOperationId);
+      if (paymentInfo.success && paymentInfo.info) {
+        const paidAt = new Date(paymentInfo.info.paidAt);
+        const daysSincePayment = (Date.now() - paidAt.getTime()) / (1000 * 60 * 60 * 24);
+        
+        if (daysSincePayment > 90) {
+          console.warn('[PaymentService] Refund warning: Payment is older than 90 days');
+        }
+      }
+
+      const body = {
+        amount: parseFloat(amount)
+      };
+
+      if (reason) {
+        body.reason = reason;
+      }
+
+      const result = await this._makeRequest(
+        'POST',
+        `/api/v1/payments/${paymentOperationId}/refunds`,
+        body
+      );
+
+      return {
+        success: true,
+        status: result.status || 'refunded',
+        refundId: result.refund_id
+      };
+    } catch (error) {
+      console.error('[PaymentService] Refund error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get payment registry for date range
+   * @param {string} dateFrom - Start date (ISO)
+   * @param {string} dateTo - End date (ISO)
+   * @param {string} [status] - Filter by status
+   * @returns {Promise<{success: boolean, registry?: array, totals?: object, error?: string}>}
+   */
+  async getPaymentRegistry(dateFrom, dateTo, status = null) {
+    try {
+      // Split date range if > 90 days
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      const dayDiff = (to - from) / (1000 * 60 * 60 * 24);
+
+      if (dayDiff > 90) {
+        console.log('[PaymentService] Date range > 90 days, splitting requests');
+        return this._getSplitRegistry(dateFrom, dateTo, status);
+      }
+
+      if (!this.config.clientId || !this.config.clientSecret) {
+        return this._getStubRegistry(dateFrom, dateTo);
+      }
+
+      const params = new URLSearchParams({
+        date_from: dateFrom,
+        date_to: dateTo
+      });
+      if (status) params.append('status', status);
+
+      const result = await this._makeRequest('GET', `/api/v1/payments registry?${params}`);
+
+      const entries = (result.payments || []).map(p => ({
+        paymentOperationId: p.payment_operation_id,
+        orderId: p.custom_fields?.order_id,
+        date: p.created_at,
+        amount: p.amount,
+        status: p.status,
+        refundAmount: p.refunded_amount || 0
+      }));
+
+      const totals = this._calculateRegistryTotals(entries);
+
+      return {
+        success: true,
+        registry: entries,
+        totals
+      };
+    } catch (error) {
+      console.error('[PaymentService] Get registry error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get registry splitting large date ranges
+   * @private
+   */
+  async _getSplitRegistry(dateFrom, dateTo, status) {
+    const allEntries = [];
+    let currentFrom = new Date(dateFrom);
+    const endDate = new Date(dateTo);
+
+    while (currentFrom < endDate) {
+      const currentTo = new Date(currentFrom);
+      currentTo.setDate(currentTo.getDate() + 90);
+
+      const result = await this.getPaymentRegistry(
+        currentFrom.toISOString(),
+        Math.min(currentTo, endDate).toISOString(),
+        status
+      );
+
+      if (result.success) {
+        allEntries.push(...result.registry);
+      }
+
+      currentFrom = new Date(currentTo);
+      currentFrom.setDate(currentFrom.getDate() + 1);
+    }
+
+    const totals = this._calculateRegistryTotals(allEntries);
+
+    return {
+      success: true,
+      registry: allEntries,
+      totals
+    };
+  }
+
+  /**
+   * Calculate registry totals
+   * @private
+   */
+  _calculateRegistryTotals(entries) {
+    const total = entries.reduce((sum, e) => sum + e.amount, 0);
+    const refunds = entries.reduce((sum, e) => sum + (e.refundAmount || 0), 0);
+
+    return {
+      total,
+      refunds,
+      net: total - refunds
+    };
+  }
+
+  /**
+   * Map API response to PaymentInfo
+   * @private
+   */
+  _mapPaymentInfo(apiResponse) {
+    return {
+      paymentOperationId: apiResponse.payment_operation_id,
+      status: this._mapStatus(apiResponse.status),
+      amount: apiResponse.amount,
+      currency: apiResponse.currency || 'RUB',
+      createdAt: apiResponse.created_at,
+      paidAt: apiResponse.paid_at,
+      paymentMethod: apiResponse.payment_method,
+      payerDetails: apiResponse.payer,
+      receiptUrl: apiResponse.receipt_url,
+      errorCode: apiResponse.error_code,
+      errorMessage: apiResponse.error_message
+    };
+  }
+
+  /**
+   * Map Tochka status to internal status
+   * @private
+   */
+  _mapStatus(tochkaStatus) {
+    const statusMap = {
+      'created': 'created',
+      'authorized': 'authorized',
+      'paid': 'paid',
+      'captured': 'captured',
+      'failed': 'failed',
+      'refunded': 'refunded',
+      'partial_refunded': 'partial_refunded'
+    };
+    return statusMap[tochkaStatus] || tochkaStatus;
+  }
+
+  /**
+   * Stub payment info
+   * @private
+   */
+  _getStubPaymentInfo(paymentOperationId) {
+    return {
+      success: true,
+      info: {
+        paymentOperationId,
+        status: 'paid',
+        amount: 0,
+        currency: 'RUB',
+        createdAt: new Date().toISOString(),
+        paidAt: new Date().toISOString()
+      }
+    };
+  }
+
+  /**
+   * Stub payment list
+   * @private
+   */
+  _getStubPaymentList(filters) {
+    return {
+      success: true,
+      operations: [],
+      total: 0,
+      page: filters.page || 1,
+      limit: filters.limit || 20
+    };
+  }
+
+  /**
+   * Stub capture
+   * @private
+   */
+  _stubCapture(paymentOperationId, amount) {
+    return {
+      success: true,
+      status: amount ? 'partial_captured' : 'captured',
+      capturedAmount: amount
+    };
+  }
+
+  /**
+   * Stub refund
+   * @private
+   */
+  _stubRefund(paymentOperationId, amount) {
+    return {
+      success: true,
+      status: 'refunded',
+      refundId: `ref_${Date.now()}`
+    };
+  }
+
+  /**
+   * Stub registry
+   * @private
+   */
+  _getStubRegistry(dateFrom, dateTo) {
+    return {
+      success: true,
+      registry: [],
+      totals: { total: 0, refunds: 0, net: 0 }
+    };
+  }
+
+  /**
+   * Check if webhook was already processed (idempotency)
+   * @private
+   */
+  _isWebhookProcessed(paymentOperationId, status) {
+    const key = `${paymentOperationId}:${status}`;
+    return this.processedWebhooks.has(key);
+  }
+
+  /**
+   * Mark webhook as processed
+   * @private
+   */
+  _markWebhookProcessed(paymentOperationId, status) {
+    const key = `${paymentOperationId}:${status}`;
+    this.processedWebhooks.set(key, Date.now());
+  }
+
+  /**
+   * Process webhook payload
+   * @param {object} payload - Webhook payload
+   * @param {string} signature - Webhook signature
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
+  async processWebhook(payload, signature) {
+    const { payment_operation_id, status, timestamp } = payload;
+
+    console.log('[PaymentService] Processing webhook:', JSON.stringify(payload));
+
+    // Verify signature if secret is configured
+    if (this.config.webhookSecret) {
+      const isValid = this._verifySignature(payload, signature);
+      if (!isValid) {
+        console.error('[PaymentService] Invalid webhook signature');
+        return { success: false, error: 'Invalid signature' };
+      }
+    }
+
+    // Idempotency check
+    if (this._isWebhookProcessed(payment_operation_id, status)) {
+      console.log('[PaymentService] Duplicate webhook, skipping:', payment_operation_id);
+      return { success: true, duplicated: true };
+    }
+
+    try {
+      // Find order by payment_operation_id
+      const { rows } = await this.pool.query(
+        'SELECT * FROM orders WHERE payment_operation_id = $1',
+        [payment_operation_id]
+      );
+
+      if (rows.length === 0) {
+        console.warn('[PaymentService] Order not found for payment_operation_id:', payment_operation_id);
+        return { success: false, error: 'Order not found' };
+      }
+
+      const order = rows[0];
+      const oldStatus = order.payment_status;
+
+      // Map status
+      const newPaymentStatus = this._mapStatus(status);
+      let newOrderStatus = order.status;
+
+      if (status === 'paid' || status === 'captured') {
+        newOrderStatus = 'paid';
+      } else if (status === 'failed') {
+        newOrderStatus = 'failed';
+      }
+
+      // Update order
+      await this.pool.query(
+        `UPDATE orders SET 
+          payment_status = $1,
+          status = $2,
+          captured_at = CASE WHEN $2 = 'paid' THEN NOW() ELSE captured_at END
+        WHERE id = $3`,
+        [newPaymentStatus, newOrderStatus, order.id]
+      );
+
+      // Add status history
+      await this.pool.query(
+        'INSERT INTO order_status_history (order_id, old_status, new_status, changed_by) VALUES ($1, $2, $3, $4)',
+        [order.id, oldStatus, newPaymentStatus, 'webhook']
+      );
+
+      // Send fiscal receipt on successful payment
+      if ((status === 'paid' || status === 'captured') && oldStatus !== 'paid') {
+        console.log('[PaymentService] Payment successful, sending fiscal receipt...');
+        
+        try {
+          const fiscalResult = await FiscalService.sendReceipt(order);
+          
+          if (fiscalResult.success) {
+            await this.pool.query(
+              'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
+              [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
+            );
+            console.log('[PaymentService] Fiscal receipt sent:', fiscalResult.receiptId);
+          }
+        } catch (fiscalError) {
+          console.error('[PaymentService] Fiscal receipt error:', fiscalError.message);
+        }
+      }
+
+      // Mark as processed
+      this._markWebhookProcessed(payment_operation_id, status);
+
+      console.log('[PaymentService] Webhook processed:', payment_operation_id, status);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[PaymentService] Webhook processing error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Verify webhook signature
+   * @private
+   */
+  _verifySignature(payload, signature) {
+    if (!signature || !this.config.webhookSecret) {
+      return !this.config.webhookSecret; // Allow if no secret configured
+    }
+
+    const crypto = require('crypto');
+    const payloadString = JSON.stringify(payload);
+    const expectedSignature = crypto
+      .createHmac('sha256', this.config.webhookSecret)
+      .update(payloadString)
+      .digest('hex');
+
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature)
+    );
+  }
+
+  /**
+   * Cleanup on shutdown
+   */
+  destroy() {
+    if (this.webhookCleanupInterval) {
+      clearInterval(this.webhookCleanupInterval);
+    }
+  }
+}
+
+// Initialize PaymentService (lazy initialization after pool is ready)
+let PaymentService = null;
+
+// Function to create PaymentService after DB is initialized
+function createPaymentService() {
+  if (!PaymentService && pool) {
+    PaymentService = new TochkaPaymentService(TOCHKA_CONFIG, pool);
+    console.log('[PaymentService] Initialized');
+  }
+  return PaymentService;
+}
 
 // ── Fiscal configuration ─────────────────────────────────────────────────
 const FISCAL_CONFIG = {
