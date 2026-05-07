@@ -1,6 +1,7 @@
 let allDishes = [];
 let allCategories = [];
 let activeFilter = '';
+let allOrders = [];
 
 // ── Auth ─────────────────────────────────────────────────
 // Токен: сначала из sessionStorage (вход через /login.html),
@@ -46,12 +47,17 @@ async function api(path, opts = {}) {
 
 // ── Section switch ────────────────────────────────────────
 function switchSection(name) {
-  ['dishes', 'categories'].forEach(s => {
+  ['dishes', 'categories', 'orders'].forEach(s => {
     qs(`section-${s}`).style.display = s === name ? '' : 'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-section]').forEach(a => {
     a.classList.toggle('active', a.dataset.section === name);
   });
+  
+  // Load orders when switching to orders section
+  if (name === 'orders') {
+    loadOrders();
+  }
 }
 
 // ── Category select population ────────────────────────────
@@ -300,6 +306,313 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ── Orders ─────────────────────────────────────────────────
+const ORDER_STATUSES = {
+  pending: 'Новый',
+  paid: 'Оплачен',
+  failed: 'Ошибка оплаты',
+  ready: 'Готов',
+  completed: 'Завершён',
+  cancelled: 'Отменён'
+};
+
+const DELIVERY_TYPES = {
+  self: 'Самовывоз',
+  courier: 'Доставка'
+};
+
+async function loadOrders() {
+  try {
+    allOrders = await api('/api/orders');
+    applyOrderFilters();
+  } catch (e) {
+    toast(`Ошибка загрузки заказов: ${e.message}`, true);
+  }
+}
+
+function applyOrderFilters() {
+  const statusFilter = qs('filter-status').value;
+  const typeFilter = qs('filter-type').value;
+  const searchQuery = qs('search-orders').value.toLowerCase();
+  
+  let filtered = [...allOrders];
+  
+  if (statusFilter) {
+    filtered = filtered.filter(o => o.status === statusFilter);
+  }
+  
+  if (typeFilter) {
+    filtered = filtered.filter(o => (o.delivery_type || o.pickup_type) === typeFilter);
+  }
+  
+  if (searchQuery) {
+    filtered = filtered.filter(o => {
+      const orderNum = (o.order_number || '').toLowerCase();
+      const name = (o.customer_name || '').toLowerCase();
+      const phone = (o.customer_phone || '').toLowerCase();
+      return orderNum.includes(searchQuery) || name.includes(searchQuery) || phone.includes(searchQuery);
+    });
+  }
+  
+  renderOrdersTable(filtered);
+  updateOrderStats(filtered);
+}
+
+function renderOrdersTable(orders) {
+  const tbody = qs('orders-tbody');
+  
+  if (orders.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="icon">📦</div>Заказов не найдено</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = orders.map(o => {
+    const date = o.created_at ? new Date(o.created_at).toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    }) : '—';
+    
+    const statusClass = `status-${o.status || 'pending'}`;
+    const statusText = ORDER_STATUSES[o.status] || o.status;
+    
+    const typeText = DELIVERY_TYPES[o.delivery_type || o.pickup_type] || 'Самовывоз';
+    const amount = Number(o.total_amount).toFixed(0);
+    
+    return `<tr>
+      <td><strong>${o.order_number || o.id}</strong></td>
+      <td>${date}</td>
+      <td>
+        <div>${o.customer_name || ''}</div>
+        <div style="font-size:12px;color:var(--muted);">${o.customer_phone || ''}</div>
+      </td>
+      <td>${typeText}</td>
+      <td class="price-cell">${amount} ₽</td>
+      <td><span class="status-pill ${statusClass}">${statusText}</span></td>
+      <td>
+        <div class="td-actions">
+          <button class="btn-edit" onclick="showOrderDetails(${o.id})">Детали</button>
+          <button class="btn-ghost" onclick="showStatusChange(${o.id}, '${o.status}')">Изменить</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function updateOrderStats(orders) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const todayOrders = orders.filter(o => {
+    const orderDate = new Date(o.created_at);
+    orderDate.setHours(0, 0, 0, 0);
+    return orderDate.getTime() === today.getTime();
+  });
+  
+  const totalRevenue = todayOrders
+    .filter(o => o.status === 'paid' || o.status === 'completed')
+    .reduce((sum, o) => sum + Number(o.total_amount), 0);
+  
+  const avgCheck = todayOrders.length > 0
+    ? Math.round(todayOrders.reduce((sum, o) => sum + Number(o.total_amount), 0) / todayOrders.length)
+    : 0;
+  
+  qs('stat-orders').textContent = todayOrders.length;
+  qs('stat-revenue').textContent = totalRevenue > 0 ? `${totalRevenue.toFixed(0)} ₽` : '—';
+  qs('stat-avg-check').textContent = avgCheck > 0 ? `${avgCheck} ₽` : '—';
+}
+
+function showOrderDetails(orderId) {
+  const order = allOrders.find(o => o.id === orderId);
+  if (!order) {
+    toast('Заказ не найден', true);
+    return;
+  }
+  
+  const modal = qs('order-modal');
+  const title = qs('order-modal-title');
+  const body = qs('order-modal-body');
+  const footer = qs('order-modal-footer');
+  
+  title.textContent = `Заказ ${order.order_number || '#' + order.id}`;
+  
+  const items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
+  const itemsHtml = items.map(item => `
+    <div class="order-item">
+      <div>
+        <span class="order-item-name">${item.name || ''}</span>
+        <span class="order-item-qty">× ${item.quantity || 1}</span>
+      </div>
+      <span class="order-item-price">${((item.price || 0) * (item.quantity || 1)).toFixed(0)} ₽</span>
+    </div>
+  `).join('');
+  
+  const statusClass = `status-${order.status || 'pending'}`;
+  const statusText = ORDER_STATUSES[order.status] || order.status;
+  const typeText = DELIVERY_TYPES[order.delivery_type || order.pickup_type] || 'Самовывоз';
+  
+  body.innerHTML = `
+    <div class="order-detail-row">
+      <span class="order-detail-label">Клиент</span>
+      <span class="order-detail-value">${order.customer_name || '—'}</span>
+    </div>
+    <div class="order-detail-row">
+      <span class="order-detail-label">Телефон</span>
+      <span class="order-detail-value">${order.customer_phone || '—'}</span>
+    </div>
+    ${order.customer_email ? `
+    <div class="order-detail-row">
+      <span class="order-detail-label">Email</span>
+      <span class="order-detail-value">${order.customer_email}</span>
+    </div>` : ''}
+    <div class="order-detail-row">
+      <span class="order-detail-label">Тип</span>
+      <span class="order-detail-value">${typeText}</span>
+    </div>
+    ${order.delivery_address ? `
+    <div class="order-detail-row">
+      <span class="order-detail-label">Адрес</span>
+      <span class="order-detail-value">${order.delivery_address}</span>
+    </div>` : ''}
+    ${order.pickup_time ? `
+    <div class="order-detail-row">
+      <span class="order-detail-label">Время самовывоза</span>
+      <span class="order-detail-value">${order.pickup_time}</span>
+    </div>` : ''}
+    ${order.delivery_time ? `
+    <div class="order-detail-row">
+      <span class="order-detail-label">Время доставки</span>
+      <span class="order-detail-value">${order.delivery_time}</span>
+    </div>` : ''}
+    <div class="order-detail-row">
+      <span class="order-detail-label">Статус оплаты</span>
+      <span class="order-detail-value">${order.payment_status || 'pending'}</span>
+    </div>
+    <div class="order-detail-row">
+      <span class="order-detail-label">Статус заказа</span>
+      <span class="order-detail-value"><span class="status-pill ${statusClass}">${statusText}</span></span>
+    </div>
+    <div class="order-detail-row">
+      <span class="order-detail-label">Дата создания</span>
+      <span class="order-detail-value">${order.created_at ? new Date(order.created_at).toLocaleString('ru-RU') : '—'}</span>
+    </div>
+    
+    <div style="margin-top:16px;font-size:14px;font-weight:800;">Состав заказа</div>
+    <div class="order-items-list">
+      ${itemsHtml}
+    </div>
+    
+    <div class="order-detail-row" style="margin-top:12px;border-top:2px solid var(--border);padding-top:12px;">
+      <span class="order-detail-label">Итого</span>
+      <span class="order-detail-value" style="font-size:18px;color:var(--accent);">${Number(order.total_amount).toFixed(0)} ₽</span>
+    </div>
+  `;
+  
+  footer.innerHTML = `
+    <button class="btn-ghost" onclick="closeOrderModal()">Закрыть</button>
+    <button class="btn-primary" onclick="showStatusChange(${order.id}, '${order.status}')">Изменить статус</button>
+  `;
+  
+  modal.classList.add('show');
+}
+
+function closeOrderModal() {
+  qs('order-modal').classList.remove('show');
+}
+
+function showStatusChange(orderId, currentStatus) {
+  const order = allOrders.find(o => o.id === orderId);
+  if (!order) return;
+  
+  const modal = qs('order-modal');
+  const title = qs('order-modal-title');
+  const body = qs('order-modal-body');
+  const footer = qs('order-modal-footer');
+  
+  title.textContent = 'Изменить статус';
+  
+  const statusOptions = Object.entries(ORDER_STATUSES).map(([value, label]) => {
+    const selected = value === currentStatus ? 'selected' : '';
+    return `<option value="${value}" ${selected}>${label}</option>`;
+  }).join('');
+  
+  body.innerHTML = `
+    <div class="field">
+      <label for="new-status">Новый статус</label>
+      <select id="new-status" style="width:100%;padding:11px 13px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);font-size:14px;">
+        ${statusOptions}
+      </select>
+    </div>
+  `;
+  
+  footer.innerHTML = `
+    <button class="btn-ghost" onclick="closeOrderModal()">Отмена</button>
+    <button class="btn-primary" onclick="updateOrderStatus(${orderId})">Сохранить</button>
+  `;
+  
+  modal.classList.add('show');
+}
+
+async function updateOrderStatus(orderId) {
+  const newStatus = qs('new-status').value;
+  
+  try {
+    await api(`/api/orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: newStatus })
+    });
+    
+    toast(`Статус заказа изменён на «${ORDER_STATUSES[newStatus]}»`);
+    closeOrderModal();
+    await loadOrders();
+    
+    // If we have order details modal open, refresh it
+    const title = qs('order-modal-title');
+    if (title.textContent.includes('Заказ')) {
+      showOrderDetails(orderId);
+    }
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+function exportOrders() {
+  const statusFilter = qs('filter-status').value;
+  const typeFilter = qs('filter-type').value;
+  
+  let filtered = [...allOrders];
+  
+  if (statusFilter) {
+    filtered = filtered.filter(o => o.status === statusFilter);
+  }
+  if (typeFilter) {
+    filtered = filtered.filter(o => (o.delivery_type || o.pickup_type) === typeFilter);
+  }
+  
+  const headers = ['№', 'Дата', 'Клиент', 'Телефон', 'Email', 'Тип', 'Адрес', 'Сумма', 'Статус', 'Оплата'];
+  const rows = filtered.map(o => [
+    o.order_number || o.id,
+    o.created_at ? new Date(o.created_at).toLocaleString('ru-RU') : '',
+    o.customer_name || '',
+    o.customer_phone || '',
+    o.customer_email || '',
+    DELIVERY_TYPES[o.delivery_type || o.pickup_type] || '',
+    o.delivery_address || '',
+    o.total_amount,
+    ORDER_STATUSES[o.status] || o.status,
+    o.payment_status || ''
+  ]);
+  
+  const csvContent = [
+    headers.join(';'),
+    ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'))
+  ].join('\n');
+  
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `orders-${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+}
+
 // ── Init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   // Если токена нет — на страницу входа
@@ -309,6 +622,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   loadAll();
+  
+  // Order filters
+  qs('filter-status')?.addEventListener('change', applyOrderFilters);
+  qs('filter-type')?.addEventListener('change', applyOrderFilters);
+  qs('search-orders')?.addEventListener('input', applyOrderFilters);
 
   qs('reset-btn').addEventListener('click', resetForm);
 

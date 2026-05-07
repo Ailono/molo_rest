@@ -434,6 +434,43 @@ app.get('/api/orders', adminAuth, async (req, res) => {
   }
 });
 
+app.put('/api/orders/:id/status', adminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  
+  const validStatuses = ['pending', 'paid', 'failed', 'ready', 'completed', 'cancelled'];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Некорректный статус' });
+  }
+  
+  try {
+    // Get current order status
+    const { rows: orderRows } = await pool.query('SELECT status FROM orders WHERE id = $1', [id]);
+    if (orderRows.length === 0) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    const oldStatus = orderRows[0].status;
+    
+    // Update order status
+    const { rows } = await pool.query(
+      'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+    
+    // Add to status history
+    await pool.query(
+      'INSERT INTO order_status_history (order_id, old_status, new_status, changed_by) VALUES ($1, $2, $3, $4)',
+      [id, oldStatus, status, ADMIN_LOGIN]
+    );
+    
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('Ошибка обновления статуса заказа:', e);
+    res.status(500).json({ error: 'Ошибка обновления статуса заказа' });
+  }
+});
+
 // Delivery settings API
 app.get('/api/settings/delivery', async (req, res) => {
   try {
