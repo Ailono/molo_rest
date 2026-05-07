@@ -40,10 +40,10 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 5.2 Implement createPaymentOperation() method
   - [x] 5.3 Implement retry logic with exponential backoff (max 3 retries)
   - [x] 5.4 Parse payment_operation_id and payment_url from API response
-  - [ ]* 5.5 Write property test for Payment URL Generation
+  - [x] 5.5 Write property test for Payment URL Generation
     - **Property 1: Payment URL Generation**
     - **Validates: Requirements 1.5**
-  - [ ]* 5.6 Write property test for Payment Operation Round-Trip
+  - [x] 5.6 Write property test for Payment Operation Round-Trip
     - **Property 7: Payment Operation Round-Trip**
     - **Validates: Requirements 1.4**
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8_
@@ -51,7 +51,7 @@ Implementation uses TypeScript for type safety matching the design specification
 - [x] 6. Implement PaymentService - Get Payment Info
   - [x] 6.1 Implement getPaymentOperation() method
   - [x] 6.2 Implement getPaymentOperations() with filtering and pagination
-  - [ ]* 6.3 Write property test for Payment Info mapping
+  - [x] 6.3 Write property test for Payment Info mapping
     - **Validates: Requirements 3.3**
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.1, 3.2, 3.3, 3.4, 3.5_
 
@@ -59,7 +59,7 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 7.1 Implement capturePayment() method
   - [x] 7.2 Handle partial capture scenarios
   - [x] 7.3 Update order status in database after successful capture
-  - [ ]* 7.4 Write property test for Payment Status After Capture
+  - [x] 7.4 Write property test for Payment Status After Capture
     - **Property 2: Payment Status After Capture**
     - **Validates: Requirements 4.4**
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
@@ -69,7 +69,7 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 8.2 Handle full vs partial refund logic
   - [x] 8.3 Update order status to refunded/partial_refunded
   - [x] 8.4 Add 90-day warning check
-  - [ ]* 8.5 Write property test for Refund Status Mapping
+  - [x] 8.5 Write property test for Refund Status Mapping
     - **Property 3: Refund Status Mapping**
     - **Validates: Requirements 5.6**
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9_
@@ -79,7 +79,7 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 9.2 Implement sendReceipt() method with 54-ФЗ format
   - [x] 9.3 Implement getReceiptStatus() method
   - [ ] 9.4 Create receipt data serialization from order
-  - [ ]* 9.5 Write property test for Receipt Data Completeness
+  - [x] 9.5 Write property test for Receipt Data Completeness
     - **Property 4: Receipt Data Completeness**
     - **Validates: Requirements 6.2**
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
@@ -89,7 +89,7 @@ Implementation uses TypeScript for type safety matching the design specification
   - [ ] 10.2 Handle date range splitting for periods > 90 days
   - [ ] 10.3 Calculate registry totals (total, refunds, net)
   - [ ] 10.4 Add CSV/Excel export capability
-  - [ ]* 10.5 Write property test for Registry Totals Calculation
+  - [~] 10.5 Write property test for Registry Totals Calculation
     - **Property 5: Registry Totals Calculation**
     - **Validates: Requirements 7.5**
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
@@ -103,7 +103,7 @@ Implementation uses TypeScript for type safety matching the design specification
   - [ ] 12.3 Implement order status update logic
   - [ ] 12.4 Implement idempotency (prevent duplicate status updates)
   - [ ] 12.5 Add comprehensive webhook logging
-  - [ ]* 12.6 Write property test for Webhook Idempotency
+  - [ ] 12.6 Write property test for Webhook Idempotency
     - **Property 6: Webhook Idempotency**
     - **Validates: Requirements 8.8**
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
