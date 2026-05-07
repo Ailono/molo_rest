@@ -212,6 +212,8 @@
     const nameEl = document.getElementById('order-name');
     const phoneEl = document.getElementById('order-phone');
     const emailEl = document.getElementById('order-email');
+    const addressEl = document.getElementById('order-address');
+    const addressErr = document.getElementById('order-address-error');
     const errMsg = document.getElementById('order-form-error');
 
     const nameErr = document.getElementById('order-name-error');
@@ -221,7 +223,7 @@
     let valid = true;
 
     // Сбросить ошибки
-    [nameErr, phoneErr, emailErr].forEach((el) => {
+    [nameErr, phoneErr, emailErr, addressErr].forEach((el) => {
       if (el) { el.textContent = ''; el.style.display = 'none'; }
     });
     if (errMsg) { errMsg.textContent = ''; errMsg.style.display = 'none'; }
@@ -229,6 +231,20 @@
     const name = nameEl ? nameEl.value.trim() : '';
     const phone = phoneEl ? phoneEl.value.trim() : '';
     const email = emailEl ? emailEl.value.trim() : '';
+
+    // Получить способ получения
+    const deliveryTypeEl = document.querySelector('input[name="delivery_type"]:checked');
+    const delivery_type = deliveryTypeEl ? deliveryTypeEl.value : 'self';
+
+    // Для доставки обязателен адрес
+    let address = '';
+    if (delivery_type === 'courier') {
+      address = addressEl ? addressEl.value.trim() : '';
+      if (!address) {
+        if (addressErr) { addressErr.textContent = 'Введите адрес доставки'; addressErr.style.display = 'block'; }
+        valid = false;
+      }
+    }
 
     if (!name) {
       if (nameErr) { nameErr.textContent = 'Введите имя'; nameErr.style.display = 'block'; }
@@ -256,15 +272,51 @@
       price: i.price,
       quantity: i.quantity,
     }));
-    const total_amount = _items.reduce((s, i) => s + i.price * i.quantity, 0);
+    const subtotal = _items.reduce((s, i) => s + i.price * i.quantity, 0);
+
+    // Рассчитать стоимость доставки
+    const delivery_cost = delivery_type === 'courier' ? CartUI.calculateDelivery(subtotal) : 0;
+    const total_amount = subtotal + delivery_cost;
 
     const body = {
       customer_name: name,
       customer_phone: phone,
+      delivery_type,
       items,
       total_amount,
+      delivery_cost,
     };
     if (email) body.customer_email = email;
+
+    // Поля для самовывоза
+    if (delivery_type === 'self') {
+      const pickupTimeEl = document.getElementById('order-pickup-time');
+      if (pickupTimeEl && pickupTimeEl.value.trim()) {
+        body.pickup_time = pickupTimeEl.value.trim();
+      }
+    }
+
+    // Поля для доставки
+    if (delivery_type === 'courier') {
+      body.delivery_address = address;
+      const deliveryTimeEl = document.getElementById('order-delivery-time');
+      if (deliveryTimeEl && deliveryTimeEl.value.trim()) {
+        body.delivery_time = deliveryTimeEl.value.trim();
+      }
+      const commentEl = document.getElementById('order-comment');
+      if (commentEl && commentEl.value.trim()) {
+        body.delivery_comment = commentEl.value.trim();
+      }
+    }
+
+    // Количество приборов
+    const tablewareEl = document.getElementById('order-tableware');
+    if (tablewareEl) {
+      const tableware = parseInt(tablewareEl.value, 10);
+      if (!isNaN(tableware) && tableware > 0) {
+        body.tableware_count = tableware;
+      }
+    }
 
     const submitBtn = document.getElementById('order-submit-btn');
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Отправка…'; }
@@ -293,6 +345,61 @@
     }
   }
 
+  // ── Настройки доставки ────────────────────────────────────────────────────
+
+  let _deliverySettings = null;
+
+  async function _loadDeliverySettings() {
+    try {
+      const res = await fetch('/api/settings/delivery');
+      if (res.ok) {
+        _deliverySettings = await res.json();
+      }
+    } catch (e) {
+      // Используем значения по умолчанию
+      _deliverySettings = {
+        free_delivery_threshold: 2000,
+        delivery_cost: 200,
+        work_hours: '10:00 - 22:00'
+      };
+    }
+  }
+
+  // ── Переключение Самовывоз/Доставка ─────────────────────────────────────
+
+  function _setupDeliveryToggle() {
+    const pickupFields = document.getElementById('cart-pickup-fields');
+    const deliveryFields = document.getElementById('cart-delivery-fields');
+    const deliveryInfo = document.getElementById('cart-delivery-info');
+    const deliveryCostEl = document.getElementById('cart-delivery-cost');
+
+    const selfRadio = document.querySelector('input[name="delivery_type"][value="self"]');
+    const courierRadio = document.querySelector('input[name="delivery_type"][value="courier"]');
+
+    if (!selfRadio || !courierRadio) return;
+
+    function updateDeliveryForm() {
+      const isCourier = courierRadio.checked;
+
+      if (pickupFields) pickupFields.style.display = isCourier ? 'none' : 'block';
+      if (deliveryFields) deliveryFields.style.display = isCourier ? 'block' : 'none';
+      if (deliveryInfo) deliveryInfo.style.display = isCourier ? 'flex' : 'none';
+
+      // Рассчитать стоимость доставки
+      if (isCourier && deliveryCostEl) {
+        const subtotal = _items.reduce((s, i) => s + i.price * i.quantity, 0);
+        const deliveryCost = CartUI.calculateDelivery(subtotal);
+        deliveryCostEl.textContent = deliveryCost === 0 ? 'Бесплатно' : `${deliveryCost} ₽`;
+      }
+    }
+
+    selfRadio.addEventListener('change', updateDeliveryForm);
+    courierRadio.addEventListener('change', updateDeliveryForm);
+
+    // Initial update
+    updateDeliveryForm();
+  }
+
   // ── Публичный API ─────────────────────────────────────────────────────────
 
   window.CartUI = {
@@ -315,7 +422,9 @@
 
       if (!this.isEnabled()) return;
 
+      _loadDeliverySettings();
       _renderCounter();
+      _setupDeliveryToggle();
 
       // Обработчики иконки корзины
       const cartIcon = document.getElementById('cart-icon-btn');
@@ -389,5 +498,30 @@
     _renderCounter,
     _renderModal,
     _changeQty,
+
+    /**
+     * Рассчитать стоимость доставки на основе суммы заказа
+     * @param {number} subtotal - сумма заказа без доставки
+     * @returns {number} - стоимость доставки (0 если бесплатно)
+     */
+    calculateDelivery(subtotal) {
+      if (!_deliverySettings) return 200; // Значение по умолчанию
+      if (subtotal >= _deliverySettings.free_delivery_threshold) {
+        return 0;
+      }
+      return _deliverySettings.delivery_cost;
+    },
+
+    /**
+     * Получить настройки доставки
+     * @returns {Promise<Object>} - настройки доставки
+     */
+    getDeliverySettings() {
+      return _loadDeliverySettings().then(() => _deliverySettings || {
+        free_delivery_threshold: 2000,
+        delivery_cost: 200,
+        work_hours: '10:00 - 22:00'
+      });
+    },
   };
 })();

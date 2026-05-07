@@ -19,6 +19,10 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// Constants for delivery calculation
+const FREE_DELIVERY_THRESHOLD = 2000;
+const DELIVERY_COST = 200;
+
 // Create tables if not exist
 async function initDB() {
   await pool.query(`CREATE TABLE IF NOT EXISTS categories (
@@ -36,19 +40,132 @@ async function initDB() {
   )`);
   // Миграция: добавляем description если ещё нет
   await pool.query(`ALTER TABLE dishes ADD COLUMN IF NOT EXISTS description TEXT`);
+  
+  // Extended orders table
   await pool.query(`CREATE TABLE IF NOT EXISTS orders (
-    id             SERIAL PRIMARY KEY,
-    customer_name  TEXT    NOT NULL,
-    customer_phone TEXT    NOT NULL,
-    customer_email TEXT,
-    items          JSONB   NOT NULL,
-    total_amount   REAL    NOT NULL,
-    pickup_type    TEXT    NOT NULL DEFAULT 'self',
-    status         TEXT    NOT NULL DEFAULT 'pending',
-    payment_url    TEXT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                   SERIAL PRIMARY KEY,
+    customer_name        TEXT    NOT NULL,
+    customer_phone       TEXT    NOT NULL,
+    customer_email       TEXT,
+    items                JSONB   NOT NULL,
+    total_amount         REAL    NOT NULL,
+    pickup_type          TEXT    NOT NULL DEFAULT 'self',
+    status               TEXT    NOT NULL DEFAULT 'pending',
+    payment_url          TEXT,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    delivery_type        TEXT    DEFAULT 'self',
+    delivery_address     TEXT,
+    delivery_time        TEXT,
+    pickup_time          TEXT,
+    delivery_comment     TEXT,
+    items_count          INTEGER,
+    payment_status       TEXT    DEFAULT 'pending',
+    payment_operation_id TEXT,
+    payment_method       TEXT,
+    order_number         TEXT,
+    tableware_count      INTEGER DEFAULT 1,
+    session_id           TEXT,
+    delivery_cost        REAL    DEFAULT 0
   )`);
+  
+  // Order status history table
+  await pool.query(`CREATE TABLE IF NOT EXISTS order_status_history (
+    id            SERIAL PRIMARY KEY,
+    order_id      INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    old_status    TEXT,
+    new_status    TEXT NOT NULL,
+    changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    changed_by    TEXT
+  )`);
+  
+  // Settings table for delivery configuration
+  await pool.query(`CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  )`);
+  
+  // Insert default delivery settings if not exist
+  await pool.query(`INSERT INTO settings (key, value) VALUES 
+    ('free_delivery_threshold', $1),
+    ('delivery_cost', $2),
+    ('work_hours', $3)
+  ON CONFLICT (key) DO NOTHING`, 
+    [FREE_DELIVERY_THRESHOLD.toString(), DELIVERY_COST.toString(), '10:00-22:00']
+  );
+  
   console.log('БД инициализирована');
+}
+
+// ── PaymentService (stub for Tochka Bank integration) ─────────────────────
+const PaymentService = {
+  /**
+   * Create payment session
+   * @param {number} amount - Payment amount in rubles
+   * @param {number} orderId - Order ID
+   * @returns {{ paymentUrl: string, sessionId: string }}
+   */
+  createPayment(amount, orderId) {
+    // Stub implementation - in production, this would call Tochka Bank API
+    const sessionId = `session_${orderId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const paymentUrl = `https://payment.tochka.com/pay/${sessionId}`;
+    return { paymentUrl, sessionId };
+  },
+  
+  /**
+   * Check payment status
+   * @param {string} sessionId - Payment session ID
+   * @returns {{ status: string }} - 'pending', 'completed', 'failed'
+   */
+  checkPayment(sessionId) {
+    // Stub implementation - in production, this would call Tochka Bank API
+    return { status: 'pending' };
+  }
+};
+
+// ── FiscalService (stub for receipt generation) ──────────────────────────
+const FiscalService = {
+  /**
+   * Send receipt to fiscal system
+   * @param {object} order - Order object
+   * @returns {{ success: boolean, receiptUrl: string }}
+   */
+  sendReceipt(order) {
+    // Stub implementation - in production, this would send to fiscal system
+    const receiptUrl = `https://receipt.tochka.com/${order.id || 'unknown'}`;
+    return { success: true, receiptUrl };
+  }
+};
+
+// ── Delivery calculation helper ───────────────────────────────────────────
+function calculateDeliveryCost(totalAmount, deliveryType) {
+  if (deliveryType === 'self') {
+    return 0;
+  }
+  return totalAmount >= FREE_DELIVERY_THRESHOLD ? 0 : DELIVERY_COST;
+}
+
+// ── Generate order number ─────────────────────────────────────────────────
+async function generateOrderNumber(pool) {
+  const year = new Date().getFullYear();
+  const prefix = `MOLO-${year}-`;
+  
+  // Get the latest order number for this year
+  const { rows } = await pool.query(
+    `SELECT order_number FROM orders 
+     WHERE order_number LIKE $1 
+     ORDER BY id DESC LIMIT 1`,
+    [`${prefix}%`]
+  );
+  
+  let nextNumber = 1;
+  if (rows.length > 0 && rows[0].order_number) {
+    const lastNumber = parseInt(rows[0].order_number.replace(prefix, ''), 10);
+    if (!isNaN(lastNumber)) {
+      nextNumber = lastNumber + 1;
+    }
+  }
+  
+  return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
 }
 initDB().catch(e => console.error('Ошибка инициализации БД:', e));
 
@@ -208,22 +325,100 @@ app.delete('/api/menu/:id', adminAuth, async (req, res) => {
 
 // Orders
 app.post('/api/orders', async (req, res) => {
-  const { customer_name, customer_phone, customer_email, items, total_amount } = req.body;
+  const { 
+    customer_name, 
+    customer_phone, 
+    customer_email, 
+    items, 
+    total_amount,
+    delivery_type,
+    delivery_address,
+    delivery_time,
+    pickup_time,
+    delivery_comment,
+    tableware_count,
+    payment_method
+  } = req.body;
+  
   if (!customer_name || !customer_phone || !Array.isArray(items) || items.length === 0 || total_amount == null) {
     return res.status(400).json({ error: 'Необходимо указать customer_name, customer_phone, items и total_amount' });
   }
+  
   try {
+    // Calculate delivery cost
+    const deliveryType = delivery_type || 'self';
+    const deliveryCost = calculateDeliveryCost(total_amount, deliveryType);
+    const finalTotal = total_amount + deliveryCost;
+    
+    // Count items
+    const itemsCount = items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+    
+    // Generate order number
+    const orderNumber = await generateOrderNumber(pool);
+    
+    // Create payment session if needed
+    let paymentUrl = null;
+    let sessionId = null;
+    
+    if (payment_method && payment_method !== 'cash') {
+      const payment = PaymentService.createPayment(finalTotal, 0);
+      paymentUrl = payment.paymentUrl;
+      sessionId = payment.sessionId;
+    }
+    
     const { rows } = await pool.query(
-      `INSERT INTO orders (customer_name, customer_phone, customer_email, items, total_amount)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [customer_name, customer_phone, customer_email || null, JSON.stringify(items), total_amount]
+      `INSERT INTO orders (
+        customer_name, customer_phone, customer_email, items, total_amount,
+        delivery_type, delivery_address, delivery_time, pickup_time, delivery_comment,
+        items_count, order_number, tableware_count, session_id, payment_method,
+        delivery_cost, payment_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
+      [
+        customer_name, 
+        customer_phone, 
+        customer_email || null, 
+        JSON.stringify(items), 
+        finalTotal,
+        deliveryType,
+        delivery_address || null,
+        delivery_time || null,
+        pickup_time || null,
+        delivery_comment || null,
+        itemsCount,
+        orderNumber,
+        tableware_count || 1,
+        sessionId,
+        payment_method || null,
+        deliveryCost,
+        paymentUrl
+      ]
     );
+    
     const order = rows[0];
-    const payment_url = getSbpPaymentUrl(order.id);
-    await pool.query('UPDATE orders SET payment_url = $1 WHERE id = $2', [payment_url, order.id]);
-    order.payment_url = payment_url;
+    
+    // Update payment URL with actual order ID if needed
+    if (paymentUrl && sessionId) {
+      const updatedPayment = PaymentService.createPayment(finalTotal, order.id);
+      paymentUrl = updatedPayment.paymentUrl;
+      sessionId = updatedPayment.sessionId;
+      await pool.query(
+        'UPDATE orders SET payment_url = $1, session_id = $2 WHERE id = $3',
+        [paymentUrl, sessionId, order.id]
+      );
+      order.payment_url = paymentUrl;
+      order.session_id = sessionId;
+    }
+    
     sendTelegramNotification(order).catch(e => console.error('[NotificationService]', e.message));
-    res.status(201).json({ order_id: order.id, payment_url });
+    
+    res.status(201).json({ 
+      order_id: order.id, 
+      order_number: order.order_number,
+      payment_url: paymentUrl,
+      session_id: sessionId,
+      total_amount: finalTotal,
+      delivery_cost: deliveryCost
+    });
   } catch (e) {
     console.error('Ошибка создания заказа:', e);
     res.status(500).json({ error: 'Ошибка создания заказа' });
@@ -236,6 +431,34 @@ app.get('/api/orders', adminAuth, async (req, res) => {
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: 'Ошибка получения заказов' });
+  }
+});
+
+// Delivery settings API
+app.get('/api/settings/delivery', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT key, value FROM settings WHERE key IN ($1, $2, $3)', 
+      ['free_delivery_threshold', 'delivery_cost', 'work_hours']
+    );
+    
+    const settings = {};
+    rows.forEach(row => {
+      if (row.key === 'free_delivery_threshold' || row.key === 'delivery_cost') {
+        settings[row.key] = parseFloat(row.value) || 0;
+      } else {
+        settings[row.key] = row.value;
+      }
+    });
+    
+    // Set defaults if not found
+    settings.free_delivery_threshold = settings.free_delivery_threshold || FREE_DELIVERY_THRESHOLD;
+    settings.delivery_cost = settings.delivery_cost || DELIVERY_COST;
+    settings.work_hours = settings.work_hours || '10:00-22:00';
+    
+    res.json(settings);
+  } catch (e) {
+    console.error('Ошибка получения настроек доставки:', e);
+    res.status(500).json({ error: 'Ошибка получения настроек доставки' });
   }
 });
 

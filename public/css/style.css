@@ -976,3 +976,61 @@ tr:last-child td{ border-bottom: 0; }
     max-height: 90vh;
   }
 }
+/* Cart pickup toggle */
+.cart-pickup-toggle {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.toggle-label {
+  flex: 1;
+  cursor: pointer;
+}
+.toggle-label input {
+  display: none;
+}
+.toggle-label span {
+  display: block;
+  padding: 10px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  transition: .15s ease;
+  font-size: 14px;
+}
+.toggle-label input:checked + span {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.cart-delivery-group {
+  margin-top: 12px;
+}
+.cart-delivery-info {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+  font-weight: 600;
+}
+.cart-form-field textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.cart-form-field input[type="number"] {
+  width: 80px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+.cart-pickup-readonly {
+  background: #f5f5f5;
+  cursor: default;
+}
