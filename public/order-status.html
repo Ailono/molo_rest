@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Molo — статус заказа</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="На главную">
+          <img id="site-logo" src="/images/лого.jpg" alt="Molo" />
+        </a>
+        <nav class="nav" aria-label="Навигация">
+          <a id="nav-menu" href="/menu.html">Меню</a>
+          <a href="/delivery.html" class="nav-delivery">Заказать доставку</a>
+          <a id="nav-contacts" href="/contacts.html">Контакты</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="section">
+        <div class="container">
+          <div class="order-status-wrap" id="order-status-wrap">
+            <div class="order-status-icon" id="order-status-icon" aria-hidden="true">⏳</div>
+            <h1 class="order-status-title" id="order-status-title">Проверка статуса...</h1>
+            <p class="order-status-msg" id="order-status-msg">Загрузка информации о заказе.</p>
+            <div class="order-status-details" id="order-status-details" style="display: none;">
+              <p class="order-status-order">Заказ <span class="order-number" id="status-order-number"></span></p>
+              <p class="order-status-sum">Сумма: <span id="status-order-sum"></span> ₽</p>
+            </div>
+            <a href="/" class="btn">На главную</a>
+          </div>
+          <div class="order-status-error" id="order-status-error" style="display: none;">
+            <div class="order-status-icon" aria-hidden="true">❓</div>
+            <h1 class="order-status-title">Заказ не найден</h1>
+            <p class="order-status-msg">Проверьте правильность ссылки или свяжитесь с нами.</p>
+            <a href="/" class="btn">На главную</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">© Molo</div>
+    </footer>
+
+    <script src="/js/common.js"></script>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var orderId = params.get('order_id');
+        
+        var wrapEl = document.getElementById('order-status-wrap');
+        var errorEl = document.getElementById('order-status-error');
+        var iconEl = document.getElementById('order-status-icon');
+        var titleEl = document.getElementById('order-status-title');
+        var msgEl = document.getElementById('order-status-msg');
+        var detailsEl = document.getElementById('order-status-details');
+        var orderNumEl = document.getElementById('status-order-number');
+        var orderSumEl = document.getElementById('status-order-sum');
+        
+        var statusTexts = {
+          pending: 'Ожидает оплаты',
+          paid: 'Оплачен',
+          ready: 'Готов к выдаче',
+          completed: 'Завершён',
+          cancelled: 'Отменён',
+          failed: 'Ошибка оплаты'
+        };
+        
+        var statusIcons = {
+          pending: '⏳',
+          paid: '💳',
+          ready: '✅',
+          completed: '🏁',
+          cancelled: '❌',
+          failed: '⚠️'
+        };
+        
+        if (!orderId) {
+          wrapEl.style.display = 'none';
+          errorEl.style.display = 'block';
+          return;
+        }
+        
+        // Fetch order status from API
+        fetch('/api/orders/by-number/' + orderId)
+          .then(function (res) {
+            if (!res.ok) throw new Error('Order not found');
+            return res.json();
+          })
+          .then(function (order) {
+            var status = order.status || 'pending';
+            
+            if (iconEl) iconEl.textContent = statusIcons[status] || '❓';
+            if (titleEl) titleEl.textContent = statusTexts[status] || 'Статус: ' + status;
+            if (msgEl) {
+              var msg = '';
+              if (status === 'pending') msg = 'Ожидаем поступления оплаты.';
+              else if (status === 'paid') msg = 'Ваш заказ готовится!';
+              else if (status === 'ready') msg = 'Заказ готов к выдаче.';
+              else if (status === 'completed') msg = 'Спасибо за заказ!';
+              else if (status === 'cancelled') msg = 'Заказ был отменён.';
+              else if (status === 'failed') msg = 'При оплате возникла ошибка.';
+              else msg = 'Статус заказа: ' + status;
+              msgEl.textContent = msg;
+            }
+            
+            if (orderNumEl) orderNumEl.textContent = '#' + (order.order_number || orderId);
+            if (orderSumEl) orderSumEl.textContent = order.total_amount || '0';
+            
+            if (detailsEl) detailsEl.style.display = 'block';
+          })
+          .catch(function (err) {
+            console.error('Error fetching order:', err);
+            wrapEl.style.display = 'none';
+            errorEl.style.display = 'block';
+          });
+      })();
+    </script>
+
+    <style>
+      .order-status-wrap {
+        max-width: 480px;
+        margin: 60px auto;
+        text-align: center;
+        padding: 40px 32px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: rgba(255,255,255,.55);
+        box-shadow: var(--shadow);
+      }
+      .order-status-error {
+        max-width: 480px;
+        margin: 60px auto;
+        text-align: center;
+        padding: 40px 32px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: rgba(255,255,255,.55);
+        box-shadow: var(--shadow);
+      }
+      .order-status-icon {
+        font-size: 52px;
+        margin-bottom: 16px;
+        line-height: 1;
+      }
+      .order-status-title {
+        margin: 0 0 10px;
+        font-size: clamp(22px, 3vw, 32px);
+      }
+      .order-status-msg {
+        color: var(--muted);
+        font-size: 16px;
+        margin: 0 0 20px;
+        line-height: 1.6;
+      }
+      .order-status-details {
+        padding: 16px;
+        background: rgba(0,0,0,.03);
+        border-radius: var(--radius);
+        margin-bottom: 20px;
+      }
+      .order-status-order,
+      .order-status-sum {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      .order-status-order .order-number {
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .order-status-details .btn {
+        margin-top: 8px;
+      }
+    </style>
+  </body>
+</html>

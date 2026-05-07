@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Molo — оплата не прошла</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="На главную">
+          <img id="site-logo" src="/images/лого.jpg" alt="Molo" />
+        </a>
+        <nav class="nav" aria-label="Навигация">
+          <a id="nav-menu" href="/menu.html">Меню</a>
+          <a href="/delivery.html" class="nav-delivery">Заказать доставку</a>
+          <a id="nav-contacts" href="/contacts.html">Контакты</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="section">
+        <div class="container">
+          <div class="order-failed-wrap">
+            <div class="order-failed-icon" aria-hidden="true">❌</div>
+            <h1 class="order-failed-title">Оплата не прошла</h1>
+            <p class="order-failed-order" id="order-number-display"></p>
+            <p class="order-failed-msg" id="error-message"></p>
+            <div class="order-failed-actions">
+              <a href="/menu.html?preview=1" class="btn btn-primary">Попробовать снова</a>
+              <a href="/contacts.html" class="btn btn-ghost">Связаться с нами</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">© Molo</div>
+    </footer>
+
+    <script src="/js/common.js"></script>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var orderId = params.get('order_id');
+        var error = params.get('error');
+        
+        var orderDisplay = document.getElementById('order-number-display');
+        var errorMsg = document.getElementById('error-message');
+        
+        if (orderId && orderDisplay) {
+          orderDisplay.innerHTML = 'Заказ <span class="order-number">#' + orderId + '</span>';
+        }
+        
+        if (error && errorMsg) {
+          errorMsg.textContent = error;
+        } else if (errorMsg) {
+          errorMsg.textContent = 'При оплате произошла ошибка. Попробуйте ещё раз или свяжитесь с нами.';
+        }
+      })();
+    </script>
+
+    <style>
+      .order-failed-wrap {
+        max-width: 480px;
+        margin: 60px auto;
+        text-align: center;
+        padding: 40px 32px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: rgba(255,255,255,.55);
+        box-shadow: var(--shadow);
+      }
+      .order-failed-icon {
+        font-size: 52px;
+        margin-bottom: 16px;
+        line-height: 1;
+      }
+      .order-failed-title {
+        margin: 0 0 10px;
+        font-size: clamp(22px, 3vw, 32px);
+      }
+      .order-failed-order {
+        font-size: 16px;
+        margin: 0 0 8px;
+      }
+      .order-failed-order .order-number {
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .order-failed-msg {
+        color: var(--muted);
+        font-size: 16px;
+        margin: 0 0 28px;
+        line-height: 1.6;
+      }
+      .order-failed-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+      }
+    </style>
+  </body>
+</html>

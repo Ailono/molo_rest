@@ -65,7 +65,11 @@ async function initDB() {
     order_number         TEXT,
     tableware_count      INTEGER DEFAULT 1,
     session_id           TEXT,
-    delivery_cost        REAL    DEFAULT 0
+    delivery_cost        REAL    DEFAULT 0,
+    receipt_id           TEXT,
+    receipt_url          TEXT,
+    fiscal_status        TEXT    DEFAULT 'pending',
+    fiscal_error         TEXT
   )`);
   
   // Order status history table
@@ -122,17 +126,542 @@ const PaymentService = {
   }
 };
 
-// ── FiscalService (stub for receipt generation) ──────────────────────────
+// ── Fiscal configuration ─────────────────────────────────────────────────
+const FISCAL_CONFIG = {
+  inn: process.env.FISCAL_INN || '',
+  name: process.env.FISCAL_NAME || 'ООО "Ресторан"',
+  address: process.env.FISCAL_ADDRESS || '',
+  apiUrl: process.env.FISCAL_API_URL || '',
+  apiKey: process.env.FISCAL_API_KEY || '',
+  callbackUrl: process.env.FISCAL_CALLBACK_URL || ''
+};
+
+// ── FiscalService (cloud online cash register integration) ───────────────
 const FiscalService = {
   /**
-   * Send receipt to fiscal system
+   * Send receipt for payment (54-ФЗ)
    * @param {object} order - Order object
-   * @returns {{ success: boolean, receiptUrl: string }}
+   * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string }}
    */
-  sendReceipt(order) {
-    // Stub implementation - in production, this would send to fiscal system
-    const receiptUrl = `https://receipt.tochka.com/${order.id || 'unknown'}`;
-    return { success: true, receiptUrl };
+  async sendReceipt(order) {
+    try {
+      const receiptData = this._buildReceiptData(order, 'sale');
+      
+      // Log the receipt data
+      console.log('[FiscalService] Sending sale receipt for order:', order.id);
+      console.log('[FiscalService] Receipt data:', JSON.stringify(receiptData, null, 2));
+      
+      // In production, make actual API call to cloud cash register
+      if (FISCAL_CONFIG.apiUrl && FISCAL_CONFIG.apiKey) {
+        const response = await this._sendToApi(receiptData);
+        return {
+          success: true,
+          receiptId: response.id,
+          receiptUrl: response.url
+        };
+      }
+      
+      // Stub implementation for development
+      const receiptId = `receipt_${order.id}_${Date.now()}`;
+      const receiptUrl = `https://receipt.cloudkassir.ru/${receiptId}`;
+      
+      return { success: true, receiptId, receiptUrl };
+    } catch (error) {
+      console.error('[FiscalService] Error sending receipt:', error.message);
+      return { success: false, error: error.message };
+    }
+  },
+  
+  /**
+   * Send receipt for refund (54-ФЗ)
+   * @param {object} order - Order object
+   * @param {number} refundAmount - Refund amount
+   * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string }}
+   */
+  async sendRefundReceipt(order, refundAmount) {
+    try {
+      const receiptData = this._buildReceiptData(order, 'refund', refundAmount);
+      
+      console.log('[FiscalService] Sending refund receipt for order:', order.id);
+      console.log('[FiscalService] Refund amount:', refundAmount);
+      
+      // In production, make actual API call
+      if (FISCAL_CONFIG.apiUrl && FISCAL_CONFIG.apiKey) {
+        const response = await this._sendToApi(receiptData);
+        return {
+          success: true,
+          receiptId: response.id,
+          receiptUrl: response.url
+        };
+      }
+      
+      // Stub implementation
+      const receiptId = `refund_${order.id}_${Date.now()}`;
+      const receiptUrl = `https://receipt.cloudkassir.ru/${receiptId}`;
+      
+      return { success: true, receiptId, receiptUrl };
+    } catch (error) {
+      console.error('[FiscalService] Error sending refund receipt:', error.message);
+      return { success: false, error: error.message };
+    }
+  },
+  
+  /**
+   * Check receipt status
+   * @param {string} receiptId - Receipt ID
+   * @returns {{ status: string, error?: string }}
+   */
+  async getReceiptStatus(receiptId) {
+    try {
+      console.log('[FiscalService] Checking receipt status:', receiptId);
+      
+      // In production, make actual API call
+      if (FISCAL_CONFIG.apiUrl && FISCAL_CONFIG.apiKey) {
+        const response = await this._checkStatus(receiptId);
+        return { status: response.status };
+      }
+      
+      // Stub implementation - always returns completed
+      return { status: 'completed' };
+    } catch (error) {
+      console.error('[FiscalService] Error checking receipt status:', error.message);
+      return { status: 'error', error: error.message };
+    }
+  },
+  
+  /**
+   * Build receipt data according to 54-ФЗ
+   * @param {object} order - Order object
+   * @param {string} type - 'sale' or 'refund'
+   * @param {number} [refundAmount] - Optional refund amount
+   * @returns {object} Receipt data
+   */
+  _buildReceiptData(order, type = 'sale', refundAmount) {
+    const items = (order.items || []).map(item => {
+      const quantity = item.quantity || 1;
+      const price = parseFloat(item.price || 0);
+      const total = price * quantity;
+      
+      return {
+        name: item.name || 'Товар',
+        quantity: quantity,
+        price: price,
+        total: Math.round(total * 100) / 100,
+        vat: item.vat || 'vat20',
+        paymentMethod: 'full_prepayment',
+        paymentObject: 'commodity'
+      };
+    });
+    
+    // Calculate totals
+    const total = items.reduce((sum, item) => sum + item.total, 0);
+    const finalTotal = refundAmount !== undefined 
+      ? Math.round(refundAmount * 100) / 100 
+      : total;
+    
+    // Build receipt object according to 54-ФЗ format
+    return {
+      seller: {
+        inn: FISCAL_CONFIG.inn,
+        name: FISCAL_CONFIG.name,
+        address: FISCAL_CONFIG.address
+      },
+      receipt: {
+        type: type,
+        items: items,
+        total: Math.round(finalTotal * 100) / 100,
+        payments: {
+          cash: 0,
+          electronic: Math.round(finalTotal * 100) / 100
+        },
+        client: order.customer_email ? {
+          email: order.customer_email
+        } : order.customer_phone ? {
+          phone: order.customer_phone
+        } : undefined,
+        company: {
+          inn: FISCAL_CONFIG.inn,
+          email: process.env.FISCAL_COMPANY_EMAIL || 'company@example.com'
+        }
+      },
+      timestamp: new Date().toISOString(),
+      external_id: `order_${order.id}`,
+      service: {
+        callback_url: FISCAL_CONFIG.callbackUrl || `https://${process.env.HOST || 'localhost'}/api/fiscal/callback`
+      }
+    };
+  },
+  
+  /**
+   * Send data to cloud cash register API
+   * @param {object} data - Receipt data
+   * @returns {Promise<object>} API response
+   * @private
+   */
+  async _sendToApi(data) {
+    const maxRetries = 3;
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${FISCAL_CONFIG.apiUrl}/v1/receipts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${FISCAL_CONFIG.apiKey}`
+          },
+          body: JSON.stringify(data)
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`API error: ${response.status} - ${errorText}`);
+        }
+        
+        return await response.json();
+      } catch (error) {
+        lastError = error;
+        console.error(`[FiscalService] Attempt ${attempt} failed:`, error.message);
+        
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+        }
+      }
+    }
+    
+    throw lastError || new Error('Max retries exceeded');
+  },
+  
+  /**
+   * Check receipt status via API
+   * @param {string} receiptId - Receipt ID
+   * @returns {Promise<object>} Status response
+   * @private
+   */
+  async _checkStatus(receiptId) {
+    const response = await fetch(`${FISCAL_CONFIG.apiUrl}/v1/receipts/${receiptId}/status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${FISCAL_CONFIG.apiKey}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Status check error: ${response.status}`);
+    }
+    
+    return await response.json();
+  }
+};
+
+// ── Notification configuration ─────────────────────────────────────────────
+const NOTIFICATION_CONFIG = {
+  telegram: {
+    enabled: process.env.TELEGRAM_ENABLED === 'true',
+    botToken: process.env.TELEGRAM_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_CHAT_ID
+  },
+  vk: {
+    enabled: process.env.VK_ENABLED === 'true',
+    token: process.env.VK_TOKEN,
+    peerId: process.env.VK_PEER_ID
+  },
+  email: {
+    enabled: process.env.EMAIL_ENABLED === 'true',
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort: process.env.SMTP_PORT,
+    smtpUser: process.env.SMTP_USER,
+    smtpPass: process.env.SMTP_PASS,
+    from: process.env.EMAIL_FROM,
+    to: process.env.EMAIL_TO
+  }
+};
+
+// ── NotificationService (multichannel notifications) ──────────────────────
+const NotificationService = {
+  /**
+   * Send notification about new order to all enabled admin channels
+   * @param {object} order - Order object
+   */
+  async notifyNewOrder(order) {
+    const message = this._formatAdminMessage(order);
+    const results = await Promise.allSettled([
+      this._sendTelegram(order, message),
+      this._sendVK(order, message),
+      this._sendEmailAdmin(order, message)
+    ]);
+    
+    // Log results
+    results.forEach((result, index) => {
+      const channel = ['Telegram', 'VK', 'Email'][index];
+      if (result.status === 'fulfilled') {
+        console.log(`[NotificationService] ${channel} notification sent successfully`);
+      } else {
+        console.error(`[NotificationService] ${channel} notification failed:`, result.reason?.message || result.reason);
+      }
+    });
+    
+    // Send confirmation to customer if email provided
+    if (order.customer_email) {
+      await this._sendCustomerConfirmation(order);
+    }
+  },
+  
+  /**
+   * Send notification about status change
+   * @param {object} order - Order object
+   * @param {string} oldStatus - Previous status
+   * @param {string} newStatus - New status
+   */
+  async notifyStatusChange(order, oldStatus, newStatus) {
+    const message = this._formatStatusChangeMessage(order, oldStatus, newStatus);
+    const results = await Promise.allSettled([
+      this._sendTelegram(order, message),
+      this._sendVK(order, message)
+    ]);
+    
+    results.forEach((result, index) => {
+      const channel = ['Telegram', 'VK'][index];
+      if (result.status === 'fulfilled') {
+        console.log(`[NotificationService] Status change ${channel} notification sent`);
+      } else {
+        console.error(`[NotificationService] Status change ${channel} failed:`, result.reason?.message || result.reason);
+      }
+    });
+  },
+  
+  /**
+   * Format admin notification message for new order
+   * @private
+   */
+  _formatAdminMessage(order) {
+    const items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
+    const itemLines = items
+      .map(i => `  • ${i.name} × ${i.quantity} — ${(i.price * i.quantity).toFixed(2)} ₽`)
+      .join('\n');
+    
+    const deliveryType = order.delivery_type === 'self' ? 'Самовывоз' : 'Доставка';
+    const time = order.pickup_time || order.delivery_time || 'Как можно скорее';
+    
+    return `🛒 <b>Новый заказ #${order.order_number}</b>
+
+👤 <b>${order.customer_name}</b>
+📞 ${order.customer_phone}
+
+📦 <b>${deliveryType}</b>
+🕐 Время: ${time}
+
+<b>Заказ:</b>
+${itemLines}
+
+<b>Итого: ${order.total_amount} ₽</b>`;
+  },
+  
+  /**
+   * Format status change message
+   * @private
+   */
+  _formatStatusChangeMessage(order, oldStatus, newStatus) {
+    const statusEmoji = {
+      pending: '⏳',
+      paid: '💳',
+      ready: '✅',
+      completed: '🏁',
+      cancelled: '❌',
+      failed: '⚠️'
+    };
+    
+    const statusText = {
+      pending: 'Ожидает оплаты',
+      paid: 'Оплачен',
+      ready: 'Готов',
+      completed: 'Завершён',
+      cancelled: 'Отменён',
+      failed: 'Ошибка оплаты'
+    };
+    
+    return `📋 <b>Статус заказа #${order.order_number} изменён</b>
+
+${statusEmoji[oldStatus] || '❓'} ${statusText[oldStatus] || oldStatus} → ${statusEmoji[newStatus] || '❓'} ${statusText[newStatus] || newStatus}
+
+👤 ${order.customer_name}
+📞 ${order.customer_phone}
+💰 Сумма: ${order.total_amount} ₽`;
+  },
+  
+  /**
+   * Send notification via Telegram
+   * @private
+   */
+  async _sendTelegram(order, message) {
+    const { telegram } = NOTIFICATION_CONFIG;
+    
+    if (!telegram.enabled || !telegram.botToken || !telegram.chatId) {
+      console.log('[NotificationService] Telegram disabled or not configured, skipping');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${telegram.botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: telegram.chatId,
+          text: message,
+          parse_mode: 'HTML'
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Telegram API error: ${response.status} - ${errorText}`);
+      }
+      
+      console.log('[NotificationService] Telegram notification sent for order:', order.order_number);
+    } catch (error) {
+      console.error('[NotificationService] Telegram error:', error.message);
+      throw error;
+    }
+  },
+  
+  /**
+   * Send notification via VK
+   * @private
+   */
+  async _sendVK(order, message) {
+    const { vk } = NOTIFICATION_CONFIG;
+    
+    if (!vk.enabled || !vk.token || !vk.peerId) {
+      console.log('[NotificationService] VK disabled or not configured, skipping');
+      return;
+    }
+    
+    try {
+      const response = await fetch('https://api.vk.com/method/messages.send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          access_token: vk.token,
+          peer_id: vk.peerId,
+          message: message.replace(/<[^>]*>/g, ''), // Strip HTML for VK
+          random_id: Date.now()
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(`VK API error: ${data.error.error_msg}`);
+      }
+      
+      console.log('[NotificationService] VK notification sent for order:', order.order_number);
+    } catch (error) {
+      console.error('[NotificationService] VK error:', error.message);
+      throw error;
+    }
+  },
+  
+  /**
+   * Send admin notification via email
+   * @private
+   */
+  async _sendEmailAdmin(order, message) {
+    const { email } = NOTIFICATION_CONFIG;
+    
+    if (!email.enabled || !email.smtpHost || !email.to) {
+      console.log('[NotificationService] Email disabled or not configured for admin, skipping');
+      return;
+    }
+    
+    try {
+      // Use nodemailer if available, otherwise use simple mailto
+      const nodemailer = require('nodemailer');
+      
+      const transporter = nodemailer.createTransport({
+        host: email.smtpHost,
+        port: parseInt(email.smtpPort) || 587,
+        secure: email.smtpPort === '465',
+        auth: {
+          user: email.smtpUser,
+          pass: email.smtpPass
+        }
+      });
+      
+      await transporter.sendMail({
+        from: email.from || email.smtpUser,
+        to: email.to,
+        subject: `Новый заказ #${order.order_number}`,
+        html: message.replace(/\n/g, '<br>')
+      });
+      
+      console.log('[NotificationService] Admin email sent for order:', order.order_number);
+    } catch (error) {
+      console.error('[NotificationService] Email error:', error.message);
+      throw error;
+    }
+  },
+  
+  /**
+   * Send confirmation email to customer
+   * @private
+   */
+  async _sendCustomerConfirmation(order) {
+    const { email } = NOTIFICATION_CONFIG;
+    
+    if (!email.enabled || !email.smtpHost) {
+      console.log('[NotificationService] Email disabled, skipping customer confirmation');
+      return;
+    }
+    
+    const items = Array.isArray(order.items) ? order.items : JSON.parse(order.items || '[]');
+    const deliveryType = order.delivery_type === 'self' ? 'Самовывоз' : 'Доставка';
+    const time = order.pickup_time || order.delivery_time || 'Как можно скорее';
+    
+    const subject = `Заказ #${order.order_number} принят`;
+    const html = `
+      <h2>Здравствуйте, ${order.customer_name}!</h2>
+      <p>Ваш заказ принят и готовится.</p>
+      
+      <h3>Детали заказа:</h3>
+      <p><b>Номер заказа:</b> ${order.order_number}</p>
+      <p><b>Сумма:</b> ${order.total_amount} ₽</p>
+      <p><b>Способ получения:</b> ${deliveryType}</p>
+      <p><b>Время:</b> ${time}</p>
+      
+      <h3>Состав заказа:</h3>
+      <ul>
+        ${items.map(i => `<li>${i.name} × ${i.quantity} — ${(i.price * i.quantity).toFixed(2)} ₽</li>`).join('')}
+      </ul>
+      
+      <p>Мы сообщим, когда заказ будет готов!</p>
+    `;
+    
+    try {
+      const nodemailer = require('nodemailer');
+      
+      const transporter = nodemailer.createTransport({
+        host: email.smtpHost,
+        port: parseInt(email.smtpPort) || 587,
+        secure: email.smtpPort === '465',
+        auth: {
+          user: email.smtpUser,
+          pass: email.smtpPass
+        }
+      });
+      
+      await transporter.sendMail({
+        from: email.from || email.smtpUser,
+        to: order.customer_email,
+        subject: subject,
+        html: html
+      });
+      
+      console.log('[NotificationService] Customer confirmation sent to:', order.customer_email);
+    } catch (error) {
+      console.error('[NotificationService] Customer email error:', error.message);
+      throw error;
+    }
   }
 };
 
@@ -409,7 +938,8 @@ app.post('/api/orders', async (req, res) => {
       order.session_id = sessionId;
     }
     
-    sendTelegramNotification(order).catch(e => console.error('[NotificationService]', e.message));
+    // Send notifications to admin via all enabled channels
+    NotificationService.notifyNewOrder(order).catch(e => console.error('[NotificationService]', e.message));
     
     res.status(201).json({ 
       order_id: order.id, 
@@ -422,6 +952,24 @@ app.post('/api/orders', async (req, res) => {
   } catch (e) {
     console.error('Ошибка создания заказа:', e);
     res.status(500).json({ error: 'Ошибка создания заказа' });
+  }
+});
+
+// Public order status by order_number
+app.get('/api/orders/by-number/:orderNumber', async (req, res) => {
+  try {
+    const { orderNumber } = req.params;
+    const { rows } = await pool.query(
+      'SELECT id, order_number, status, total_amount, customer_name, created_at FROM orders WHERE order_number = $1',
+      [orderNumber]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('Ошибка получения заказа:', e);
+    res.status(500).json({ error: 'Ошибка получения заказа' });
   }
 });
 
@@ -445,12 +993,17 @@ app.put('/api/orders/:id/status', adminAuth, async (req, res) => {
   
   try {
     // Get current order status
-    const { rows: orderRows } = await pool.query('SELECT status FROM orders WHERE id = $1', [id]);
+    const { rows: orderRows } = await pool.query('SELECT * FROM orders WHERE id = $1', [id]);
     if (orderRows.length === 0) {
       return res.status(404).json({ error: 'Заказ не найден' });
     }
     
     const oldStatus = orderRows[0].status;
+    
+    // Skip notification if status hasn't changed
+    if (oldStatus === status) {
+      return res.json(orderRows[0]);
+    }
     
     // Update order status
     const { rows } = await pool.query(
@@ -462,6 +1015,11 @@ app.put('/api/orders/:id/status', adminAuth, async (req, res) => {
     await pool.query(
       'INSERT INTO order_status_history (order_id, old_status, new_status, changed_by) VALUES ($1, $2, $3, $4)',
       [id, oldStatus, status, ADMIN_LOGIN]
+    );
+    
+    // Send status change notification to admin
+    NotificationService.notifyStatusChange(orderRows[0], oldStatus, status).catch(e => 
+      console.error('[NotificationService] Status change notification error:', e.message)
     );
     
     res.json(rows[0]);
@@ -499,8 +1057,72 @@ app.get('/api/settings/delivery', async (req, res) => {
   }
 });
 
-app.post('/api/payment/webhook', (req, res) => {
-  res.json({ ok: true });
+app.post('/api/payment/webhook', async (req, res) => {
+  const { session_id, status, operation_id } = req.body;
+  
+  console.log('[PaymentWebhook] Received webhook:', req.body);
+  
+  if (!session_id) {
+    return res.status(400).json({ error: 'session_id required' });
+  }
+  
+  try {
+    // Find order by session_id
+    const { rows: orderRows } = await pool.query(
+      'SELECT * FROM orders WHERE session_id = $1',
+      [session_id]
+    );
+    
+    if (orderRows.length === 0) {
+      console.warn('[PaymentWebhook] Order not found for session:', session_id);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const order = orderRows[0];
+    
+    // Update payment status
+    const newPaymentStatus = status === 'SUCCESS' ? 'paid' : status === 'FAILED' ? 'failed' : 'pending';
+    const newOrderStatus = status === 'SUCCESS' ? 'paid' : status === 'FAILED' ? 'failed' : order.status;
+    
+    await pool.query(
+      'UPDATE orders SET payment_status = $1, status = $2, payment_operation_id = $3 WHERE id = $4',
+      [newPaymentStatus, newOrderStatus, operation_id, order.id]
+    );
+    
+    // Send fiscal receipt on successful payment
+    if (status === 'SUCCESS') {
+      console.log('[PaymentWebhook] Payment successful, sending fiscal receipt...');
+      
+      try {
+        const fiscalResult = await FiscalService.sendReceipt(order);
+        
+        if (fiscalResult.success) {
+          await pool.query(
+            'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
+            [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
+          );
+          console.log('[PaymentWebhook] Fiscal receipt sent successfully:', fiscalResult.receiptId);
+        } else {
+          await pool.query(
+            'UPDATE orders SET fiscal_status = $2, fiscal_error = $3 WHERE id = $4',
+            [order.id, 'error', fiscalResult.error]
+          );
+          console.error('[PaymentWebhook] Fiscal receipt failed:', fiscalResult.error);
+        }
+      } catch (fiscalError) {
+        console.error('[PaymentWebhook] FiscalService error:', fiscalError.message);
+        await pool.query(
+          'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
+          ['error', fiscalError.message, order.id]
+        );
+      }
+    }
+    
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[PaymentWebhook] Error processing webhook:', error);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
 // Image upload → Cloudinary
@@ -522,6 +1144,177 @@ app.post('/api/upload', adminAuth, (req, res) => {
     );
     stream.end(req.file.buffer);
   });
+});
+
+// ── Fiscal API ───────────────────────────────────────────────────────────
+
+/**
+ * Webhook for receiving fiscal receipt status from cloud cash register
+ * POST /api/fiscal/callback
+ */
+app.post('/api/fiscal/callback', async (req, res) => {
+  const { receipt_id, external_id, status, error } = req.body;
+  
+  console.log('[FiscalCallback] Received callback:', req.body);
+  
+  if (!external_id) {
+    return res.status(400).json({ error: 'external_id required' });
+  }
+  
+  try {
+    // Extract order ID from external_id (format: order_123)
+    const orderId = parseInt(external_id.replace('order_', ''), 10);
+    
+    if (isNaN(orderId)) {
+      console.error('[FiscalCallback] Invalid external_id:', external_id);
+      return res.status(400).json({ error: 'Invalid external_id' });
+    }
+    
+    // Update order with fiscal status
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+    
+    if (status) {
+      updates.push(`fiscal_status = $${paramIndex++}`);
+      values.push(status === 'completed' ? 'completed' : status);
+    }
+    
+    if (error) {
+      updates.push(`fiscal_error = $${paramIndex++}`);
+      values.push(error);
+    }
+    
+    if (receipt_id) {
+      updates.push(`receipt_id = $${paramIndex++}`);
+      values.push(receipt_id);
+    }
+    
+    if (updates.length > 0) {
+      values.push(orderId);
+      await pool.query(
+        `UPDATE orders SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+        values
+      );
+      console.log('[FiscalCallback] Updated order:', orderId, 'status:', status);
+    }
+    
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[FiscalCallback] Error processing callback:', error);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+/**
+ * Get receipt URL for an order
+ * PUT /api/orders/:id/receipt
+ */
+app.put('/api/orders/:id/receipt', async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, receipt_id, receipt_url, fiscal_status, fiscal_error FROM orders WHERE id = $1',
+      [id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    const order = rows[0];
+    
+    // If no receipt exists, generate one
+    if (!order.receipt_id && order.payment_status === 'paid') {
+      console.log('[Receipt] Generating receipt for order:', id);
+      
+      const fiscalResult = await FiscalService.sendReceipt(order);
+      
+      if (fiscalResult.success) {
+        await pool.query(
+          'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
+          [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', id]
+        );
+        
+        order.receipt_id = fiscalResult.receiptId;
+        order.receipt_url = fiscalResult.receiptUrl;
+        order.fiscal_status = 'sent';
+      }
+    }
+    
+    // If we still don't have a receipt URL, try to check status
+    if (!order.receipt_url && order.receipt_id) {
+      const statusResult = await FiscalService.getReceiptStatus(order.receipt_id);
+      console.log('[Receipt] Status check:', statusResult);
+    }
+    
+    res.json({
+      order_id: order.id,
+      receipt_id: order.receipt_id,
+      receipt_url: order.receipt_url,
+      fiscal_status: order.fiscal_status,
+      fiscal_error: order.fiscal_error
+    });
+  } catch (error) {
+    console.error('[Receipt] Error getting receipt:', error);
+    res.status(500).json({ error: 'Ошибка получения чека' });
+  }
+});
+
+/**
+ * Process refund and send refund receipt
+ * POST /api/orders/:id/refund
+ */
+app.post('/api/orders/:id/refund', adminAuth, async (req, res) => {
+  const { id } = req.params;
+  const { amount, reason } = req.body;
+  
+  try {
+    const { rows } = await pool.query('SELECT * FROM orders WHERE id = $1', [id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    const order = rows[0];
+    
+    if (order.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'Заказ не оплачен' });
+    }
+    
+    const refundAmount = amount || order.total_amount;
+    
+    if (refundAmount > order.total_amount) {
+      return res.status(400).json({ error: 'Сумма возврата превышает сумму заказа' });
+    }
+    
+    // In production, process actual refund via payment provider
+    // For now, just create fiscal refund receipt
+    const fiscalResult = await FiscalService.sendRefundReceipt(order, refundAmount);
+    
+    if (fiscalResult.success) {
+      await pool.query(
+        `UPDATE orders SET 
+          receipt_id = $1, 
+          receipt_url = $2, 
+          fiscal_status = 'refund_sent',
+          fiscal_error = $3 
+        WHERE id = $4`,
+        [fiscalResult.receiptId, fiscalResult.receiptUrl, reason || null, id]
+      );
+    }
+    
+    res.json({
+      success: true,
+      refund_amount: refundAmount,
+      receipt_id: fiscalResult.receiptId,
+      receipt_url: fiscalResult.receiptUrl
+    });
+  } catch (error) {
+    console.error('[Refund] Error processing refund:', error);
+    res.status(500).json({ error: 'Ошибка обработки возврата' });
+  }
 });
 
 // Admin page
