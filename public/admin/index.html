@@ -529,6 +529,41 @@
               </div>
             </div>
 
+            <!-- SECTION: PAYMENTS -->
+            <div id="section-payments" style="display:none;">
+              <div class="stats-row" style="margin-bottom:20px;">
+                <div class="stat-card">
+                  <div class="stat-num" id="stat-registry-total">—</div>
+                  <div class="stat-label">Всего платежей</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num" id="stat-registry-amount">—</div>
+                  <div class="stat-label">Сумма</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num" id="stat-registry-net">—</div>
+                  <div class="stat-label">Чистая сумма</div>
+                </div>
+              </div>
+              
+              <div class="panel">
+                <div class="panel-head">
+                  <h2 class="panel-title">Реестр платежей</h2>
+                  <div class="btn-row">
+                    <input type="date" id="registry-date-from" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);font-size:13px;" />
+                    <span style="color:var(--muted);">—</span>
+                    <input type="date" id="registry-date-to" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);font-size:13px;" />
+                    <button class="btn-primary" onclick="loadPaymentRegistry()">Загрузить</button>
+                    <button class="btn-ghost" onclick="exportRegistryCSV()">Экспорт CSV</button>
+                    <button class="btn-ghost" onclick="exportRegistryExcel()">Экспорт Excel</button>
+                  </div>
+                </div>
+                <div id="registry-table-wrap">
+                  <div class="empty-state"><div class="icon">💳</div>Выберите период и нажмите "Загрузить"</div>
+                </div>
+              </div>
+            </div>
+
           </div><!-- /admin-main -->
         </div><!-- /admin-layout -->
       </div>

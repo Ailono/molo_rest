@@ -6,6 +6,7 @@ const basicAuth = require('basic-auth');
 const { Pool } = require('pg');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
+const XLSX = require('xlsx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -300,7 +301,99 @@ class PaymentError extends Error {
     this.code = code;
     this.details = details;
   }
+
+  /**
+   * Get HTTP status code for this error
+   * @returns {number} HTTP status code
+   */
+  getHttpStatus() {
+    switch (this.code) {
+      case 'VALIDATION_ERROR':
+        return 400;
+      case 'AUTH_ERROR':
+        return 401;
+      case 'NOT_FOUND':
+        return 404;
+      case 'BUSINESS_ERROR':
+        return 422;
+      case 'NETWORK_ERROR':
+        return 503;
+      case 'INTERNAL_ERROR':
+      default:
+        return 500;
+    }
+  }
 }
+
+// Secrets to exclude from logging
+const SECRETS_TO_MASK = ['client_secret', 'refresh_token', 'access_token', 'password', 'token', 'secret', 'api_key'];
+
+/**
+ * Mask secrets in an object
+ * @param {object} obj - Object to sanitize
+ * @returns {object} Sanitized object
+ */
+function maskSecrets(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  const sanitized = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const lowerKey = key.toLowerCase();
+    const shouldMask = SECRETS_TO_MASK.some(secret => lowerKey.includes(secret));
+    
+    if (shouldMask && typeof value === 'string') {
+      sanitized[key] = '***MASKED***';
+    } else if (value && typeof value === 'object') {
+      sanitized[key] = maskSecrets(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
+/**
+ * Error Logger - logs full error context as per Requirement 10.3
+ */
+const ErrorLogger = {
+  /**
+   * Log error with full context
+   * @param {string} context - Context identifier (e.g., 'PaymentService', 'OrderAPI')
+   * @param {string} endpoint - API endpoint that was called
+   * @param {object} params - Request parameters (without secrets)
+   * @param {Error} error - The error that occurred
+   */
+  log(context, endpoint, params, error) {
+    const errorInfo = {
+      context,
+      endpoint,
+      params: params ? maskSecrets(params) : undefined,
+      errorCode: error.code || 'UNKNOWN',
+      errorMessage: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    };
+
+    console.error(`[${context}] Error occurred at ${errorInfo.timestamp}`);
+    console.error(`[${context}] Endpoint: ${endpoint}`);
+    console.error(`[${context}] Error Code: ${errorInfo.errorCode}`);
+    console.error(`[${context}] Error Message: ${errorInfo.errorMessage}`);
+    console.error(`[${context}] Parameters:`, JSON.stringify(errorInfo.params, null, 2));
+    console.error(`[${context}] Stack Trace:`, error.stack);
+
+    return errorInfo;
+  },
+
+  /**
+   * Log error from PaymentService method
+   * @param {string} methodName - Name of the method that failed
+   * @param {object} requestData - Request data (endpoint, params)
+   * @param {Error} error - The error
+   */
+  logPaymentError(methodName, requestData, error) {
+    return this.log('PaymentService', requestData.endpoint || methodName, requestData.params, error);
+  }
+};
 
 const ErrorClassifier = {
   classify(error) {
@@ -513,7 +606,10 @@ class TochkaPaymentService {
         paymentUrl
       };
     } catch (error) {
-      console.error('[PaymentService] Create payment error:', error.message);
+      ErrorLogger.logPaymentError('createPaymentOperation', {
+        endpoint: 'POST /api/v1/payments',
+        params: { amount: order.total_amount, orderId: order.id, orderNumber: order.order_number }
+      }, error);
       return {
         success: false,
         error: error.message || 'Failed to create payment'
@@ -554,7 +650,10 @@ class TochkaPaymentService {
         info: this._mapPaymentInfo(result)
       };
     } catch (error) {
-      console.error('[PaymentService] Get payment error:', error.message);
+      ErrorLogger.logPaymentError('getPaymentOperation', {
+        endpoint: `GET /api/v1/payments/${paymentOperationId}`,
+        params: { paymentOperationId }
+      }, error);
       return {
         success: false,
         error: error.message
@@ -592,7 +691,10 @@ class TochkaPaymentService {
         limit
       };
     } catch (error) {
-      console.error('[PaymentService] Get payments error:', error.message);
+      ErrorLogger.logPaymentError('getPaymentOperations', {
+        endpoint: 'GET /api/v1/payments',
+        params: { filters }
+      }, error);
       return {
         success: false,
         error: error.message
@@ -629,7 +731,10 @@ class TochkaPaymentService {
         capturedAmount: result.amount
       };
     } catch (error) {
-      console.error('[PaymentService] Capture error:', error.message);
+      ErrorLogger.logPaymentError('capturePayment', {
+        endpoint: `POST /api/v1/payments/${paymentOperationId}/capture`,
+        params: { paymentOperationId, amount }
+      }, error);
       return {
         success: false,
         error: error.message
@@ -681,7 +786,10 @@ class TochkaPaymentService {
         refundId: result.refund_id
       };
     } catch (error) {
-      console.error('[PaymentService] Refund error:', error.message);
+      ErrorLogger.logPaymentError('refundPayment', {
+        endpoint: `POST /api/v1/payments/${paymentOperationId}/refund`,
+        params: { paymentOperationId, amount, reason }
+      }, error);
       return {
         success: false,
         error: error.message
@@ -718,7 +826,7 @@ class TochkaPaymentService {
       });
       if (status) params.append('status', status);
 
-      const result = await this._makeRequest('GET', `/api/v1/payments registry?${params}`);
+      const result = await this._makeRequest('GET', `/api/v1/payments/registry?${params}`);
 
       const entries = (result.payments || []).map(p => ({
         paymentOperationId: p.payment_operation_id,
@@ -737,7 +845,10 @@ class TochkaPaymentService {
         totals
       };
     } catch (error) {
-      console.error('[PaymentService] Get registry error:', error.message);
+      ErrorLogger.logPaymentError('getPaymentRegistry', {
+        endpoint: 'GET /api/v1/payments/registry',
+        params: { dateFrom, dateTo, status }
+      }, error);
       return {
         success: false,
         error: error.message
@@ -1012,7 +1123,10 @@ class TochkaPaymentService {
       
       return { success: true };
     } catch (error) {
-      console.error('[PaymentService] Webhook processing error:', error.message);
+      ErrorLogger.logPaymentError('processWebhook', {
+        endpoint: 'POST /api/payment/webhook',
+        params: { payment_operation_id, status }
+      }, error);
       return { success: false, error: error.message };
     }
   }
@@ -1996,71 +2110,108 @@ app.get('/api/settings/delivery', async (req, res) => {
 });
 
 app.post('/api/payment/webhook', async (req, res) => {
-  const { session_id, status, operation_id } = req.body;
+  const { payment_operation_id, session_id, status, operation_id, timestamp } = req.body;
+  const signature = req.headers['x-tochka-signature'] || req.headers['x-webhook-signature'];
   
-  console.log('[PaymentWebhook] Received webhook:', req.body);
+  console.log('[PaymentWebhook] Received webhook:', JSON.stringify(req.body));
   
-  if (!session_id) {
-    return res.status(400).json({ error: 'session_id required' });
-  }
-  
-  try {
-    // Find order by session_id
-    const { rows: orderRows } = await pool.query(
-      'SELECT * FROM orders WHERE session_id = $1',
-      [session_id]
-    );
+  // Handle Tochka-style webhook (uses payment_operation_id)
+  if (payment_operation_id) {
+    console.log('[PaymentWebhook] Processing Tochka webhook for payment_operation_id:', payment_operation_id);
     
-    if (orderRows.length === 0) {
-      console.warn('[PaymentWebhook] Order not found for session:', session_id);
-      return res.status(404).json({ error: 'Order not found' });
-    }
-    
-    const order = orderRows[0];
-    
-    // Update payment status
-    const newPaymentStatus = status === 'SUCCESS' ? 'paid' : status === 'FAILED' ? 'failed' : 'pending';
-    const newOrderStatus = status === 'SUCCESS' ? 'paid' : status === 'FAILED' ? 'failed' : order.status;
-    
-    await pool.query(
-      'UPDATE orders SET payment_status = $1, status = $2, payment_operation_id = $3 WHERE id = $4',
-      [newPaymentStatus, newOrderStatus, operation_id, order.id]
-    );
-    
-    // Send fiscal receipt on successful payment
-    if (status === 'SUCCESS') {
-      console.log('[PaymentWebhook] Payment successful, sending fiscal receipt...');
+    try {
+      const service = createPaymentService();
+      const result = await service.processWebhook(req.body, signature);
       
-      try {
-        const fiscalResult = await FiscalService.sendReceipt(order);
-        
-        if (fiscalResult.success) {
-          await pool.query(
-            'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
-            [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
-          );
-          console.log('[PaymentWebhook] Fiscal receipt sent successfully:', fiscalResult.receiptId);
-        } else {
-          await pool.query(
-            'UPDATE orders SET fiscal_status = $2, fiscal_error = $3 WHERE id = $4',
-            [order.id, 'error', fiscalResult.error]
-          );
-          console.error('[PaymentWebhook] Fiscal receipt failed:', fiscalResult.error);
+      if (!result.success) {
+        console.error('[PaymentWebhook] Tochka webhook processing failed:', result.error);
+        if (result.error === 'Invalid signature') {
+          return res.status(401).json({ error: 'Invalid signature' });
         }
-      } catch (fiscalError) {
-        console.error('[PaymentWebhook] FiscalService error:', fiscalError.message);
-        await pool.query(
-          'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
-          ['error', fiscalError.message, order.id]
-        );
+        if (result.error === 'Order not found') {
+          return res.status(404).json({ error: 'Order not found' });
+        }
+        return res.status(500).json({ error: result.error });
       }
+      
+      if (result.duplicated) {
+        console.log('[PaymentWebhook] Duplicate webhook ignored');
+        return res.json({ ok: true, duplicated: true });
+      }
+      
+      console.log('[PaymentWebhook] Tochka webhook processed successfully');
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('[PaymentWebhook] Error processing Tochka webhook:', error);
+      return res.status(500).json({ error: 'Internal error' });
     }
-    
-    res.json({ ok: true });
-  } catch (error) {
-    console.error('[PaymentWebhook] Error processing webhook:', error);
-    res.status(500).json({ error: 'Internal error' });
   }
+  
+  // Legacy SBP webhook (uses session_id)
+  if (session_id) {
+    console.log('[PaymentWebhook] Processing legacy SBP webhook for session_id:', session_id);
+    
+    try {
+      // Find order by session_id
+      const { rows: orderRows } = await pool.query(
+        'SELECT * FROM orders WHERE session_id = $1',
+        [session_id]
+      );
+      
+      if (orderRows.length === 0) {
+        console.warn('[PaymentWebhook] Order not found for session:', session_id);
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      
+      const order = orderRows[0];
+      
+      // Update payment status
+      const newPaymentStatus = status === 'SUCCESS' ? 'paid' : status === 'FAILED' ? 'failed' : 'pending';
+      const newOrderStatus = status === 'SUCCESS' ? 'paid' : status === 'FAILED' ? 'failed' : order.status;
+      
+      await pool.query(
+        'UPDATE orders SET payment_status = $1, status = $2, payment_operation_id = $3 WHERE id = $4',
+        [newPaymentStatus, newOrderStatus, operation_id, order.id]
+      );
+      
+      // Send fiscal receipt on successful payment
+      if (status === 'SUCCESS') {
+        console.log('[PaymentWebhook] Payment successful, sending fiscal receipt...');
+        
+        try {
+          const fiscalResult = await FiscalService.sendReceipt(order);
+          
+          if (fiscalResult.success) {
+            await pool.query(
+              'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
+              [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
+            );
+            console.log('[PaymentWebhook] Fiscal receipt sent successfully:', fiscalResult.receiptId);
+          } else {
+            await pool.query(
+              'UPDATE orders SET fiscal_status = $2, fiscal_error = $3 WHERE id = $4',
+              [order.id, 'error', fiscalResult.error]
+            );
+            console.error('[PaymentWebhook] Fiscal receipt failed:', fiscalResult.error);
+          }
+        } catch (fiscalError) {
+          console.error('[PaymentWebhook] FiscalService error:', fiscalError.message);
+          await pool.query(
+            'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
+            ['error', fiscalError.message, order.id]
+          );
+        }
+      }
+      
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('[PaymentWebhook] Error processing legacy webhook:', error);
+      return res.status(500).json({ error: 'Internal error' });
+    }
+  }
+  
+  // Neither payment_operation_id nor session_id provided
+  return res.status(400).json({ error: 'payment_operation_id or session_id required' });
 });
 
 // Image upload → Cloudinary
@@ -2293,7 +2444,6 @@ function pickLogoPath() {
   }
   return null;
 }
-});
 
 // ── Tochka Payment API Endpoints (Task 14) ─────────────────────────────────
 
@@ -2547,6 +2697,135 @@ app.get('/api/payment/registry', adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('[PaymentAPI] Get registry error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/payment/registry/export/csv - Export payment registry as CSV
+ * Query: dateFrom, dateTo, status
+ */
+app.get('/api/payment/registry/export/csv', adminAuth, async (req, res) => {
+  try {
+    const { dateFrom, dateTo, status } = req.query;
+    
+    if (!dateFrom || !dateTo) {
+      return res.status(400).json({ error: 'dateFrom and dateTo parameters required' });
+    }
+    
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const result = await paymentService.getPaymentRegistry(dateFrom, dateTo, status);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to get payment registry' });
+    }
+    
+    // Format registry data for CSV
+    const headers = ['ID платежа', 'Номер заказа', 'Дата', 'Сумма', 'Статус', 'Сумма возврата'];
+    const rows = result.registry.map(entry => [
+      entry.paymentOperationId || '',
+      entry.orderId || '',
+      entry.date ? new Date(entry.date).toLocaleString('ru-RU') : '',
+      entry.amount ? entry.amount.toFixed(2) : '0.00',
+      entry.status || '',
+      entry.refundAmount ? entry.refundAmount.toFixed(2) : '0.00'
+    ]);
+    
+    // Add totals row
+    const totalRow = ['', '', 'ИТОГО:', result.totals.total.toFixed(2), '', result.totals.refunds.toFixed(2)];
+    const netRow = ['', '', 'ЧИСТАЯ СУММА:', result.totals.net.toFixed(2), '', ''];
+    
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')),
+      totalRow.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'),
+      netRow.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')
+    ].join('\n');
+    
+    const filename = `payment-registry-${dateFrom.split('T')[0]}-${dateTo.split('T')[0]}.csv`;
+    res.setHeader('Content-Type', 'text/csv;charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('\ufeff' + csvContent);
+  } catch (error) {
+    console.error('[PaymentAPI] Export CSV error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/payment/registry/export/excel - Export payment registry as Excel
+ * Query: dateFrom, dateTo, status
+ */
+app.get('/api/payment/registry/export/excel', adminAuth, async (req, res) => {
+  try {
+    const { dateFrom, dateTo, status } = req.query;
+    
+    if (!dateFrom || !dateTo) {
+      return res.status(400).json({ error: 'dateFrom and dateTo parameters required' });
+    }
+    
+    const paymentService = createPaymentService();
+    if (!paymentService) {
+      return res.status(503).json({ error: 'Payment service not available' });
+    }
+    
+    const result = await paymentService.getPaymentRegistry(dateFrom, dateTo, status);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Failed to get payment registry' });
+    }
+    
+    // Prepare data for Excel
+    const wsData = [
+      ['Реестр платежей'],
+      [`Период: ${new Date(dateFrom).toLocaleDateString('ru-RU')} - ${new Date(dateTo).toLocaleDateString('ru-RU')}`],
+      [],
+      ['ID платежа', 'Номер заказа', 'Дата', 'Сумма (₽)', 'Статус', 'Сумма возврата (₽)']
+    ];
+    
+    // Add data rows
+    result.registry.forEach(entry => {
+      wsData.push([
+        entry.paymentOperationId || '',
+        entry.orderId || '',
+        entry.date ? new Date(entry.date).toLocaleString('ru-RU') : '',
+        entry.amount || 0,
+        entry.status || '',
+        entry.refundAmount || 0
+      ]);
+    });
+    
+    // Add totals
+    wsData.push([]);
+    wsData.push(['', '', 'ИТОГО:', result.totals.total, '', result.totals.refunds]);
+    wsData.push(['', '', 'ЧИСТАЯ СУММА:', result.totals.net, '', '']);
+    
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 30 }, // ID платежа
+      { wch: 15 }, // Номер заказа
+      { wch: 20 }, // Дата
+      { wch: 15 }, // Сумма
+      { wch: 15 }, // Статус
+      { wch: 18 }  // Сумма возврата
+    ];
+    
+    XLSX.utils.book_append_sheet(wb, ws, 'Реестр платежей');
+    
+    const filename = `payment-registry-${dateFrom.split('T')[0]}-${dateTo.split('T')[0]}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  } catch (error) {
+    console.error('[PaymentAPI] Export Excel error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

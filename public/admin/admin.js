@@ -47,7 +47,7 @@ async function api(path, opts = {}) {
 
 // ── Section switch ────────────────────────────────────────
 function switchSection(name) {
-  ['dishes', 'categories', 'orders'].forEach(s => {
+  ['dishes', 'categories', 'orders', 'payments'].forEach(s => {
     qs(`section-${s}`).style.display = s === name ? '' : 'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-section]').forEach(a => {
@@ -613,6 +613,100 @@ function exportOrders() {
   link.click();
 }
 
+// ── Payment Registry ──────────────────────────────────────
+let currentRegistryData = null;
+
+async function loadPaymentRegistry() {
+  const dateFrom = qs('registry-date-from').value;
+  const dateTo = qs('registry-date-to').value;
+  
+  if (!dateFrom || !dateTo) {
+    toast('Выберите период', true);
+    return;
+  }
+  
+  try {
+    const data = await api(`/api/payment/registry?dateFrom=${dateFrom}T00:00:00.000Z&dateTo=${dateTo}T23:59:59.999Z`);
+    currentRegistryData = data;
+    renderPaymentRegistry(data);
+  } catch (e) {
+    toast(`Ошибка загрузки реестра: ${e.message}`, true);
+  }
+}
+
+function renderPaymentRegistry(data) {
+  const wrap = qs('registry-table-wrap');
+  
+  if (!data.registry || data.registry.length === 0) {
+    wrap.innerHTML = '<div class="empty-state"><div class="icon">💳</div>Платежей за указанный период не найдено</div>';
+    return;
+  }
+  
+  // Update stats
+  qs('stat-registry-total').textContent = data.registry.length;
+  qs('stat-registry-amount').textContent = data.totals.total > 0 ? `${data.totals.total.toFixed(0)} ₽` : '—';
+  qs('stat-registry-net').textContent = data.totals.net > 0 ? `${data.totals.net.toFixed(0)} ₽` : '—';
+  
+  const table = document.createElement('table');
+  table.className = 'data-table';
+  table.innerHTML = `<thead><tr>
+    <th>ID платежа</th>
+    <th>Заказ</th>
+    <th>Дата</th>
+    <th>Сумма</th>
+    <th>Статус</th>
+    <th>Возврат</th>
+  </tr></thead>`;
+  
+  const tbody = document.createElement('tbody');
+  data.registry.forEach(entry => {
+    const tr = document.createElement('tr');
+    
+    tr.innerHTML = `
+      <td style="font-family:monospace;font-size:12px;">${entry.paymentOperationId || '—'}</td>
+      <td>${entry.orderId || '—'}</td>
+      <td>${entry.date ? new Date(entry.date).toLocaleString('ru-RU') : '—'}</td>
+      <td class="price-cell">${entry.amount ? entry.amount.toFixed(2) : '0.00'} ₽</td>
+      <td>${entry.status || '—'}</td>
+      <td>${entry.refundAmount ? entry.refundAmount.toFixed(2) : '0.00'} ₽</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  table.appendChild(tbody);
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
+}
+
+function exportRegistryCSV() {
+  const dateFrom = qs('registry-date-from').value;
+  const dateTo = qs('registry-date-to').value;
+  
+  if (!dateFrom || !dateTo) {
+    toast('Выберите период', true);
+    return;
+  }
+  
+  // Use direct download via browser
+  const token = getToken();
+  const url = `/api/payment/registry/export/csv?dateFrom=${dateFrom}T00:00:00.000Z&dateTo=${dateTo}T23:59:59.999Z`;
+  window.open(url, '_blank');
+}
+
+function exportRegistryExcel() {
+  const dateFrom = qs('registry-date-from').value;
+  const dateTo = qs('registry-date-to').value;
+  
+  if (!dateFrom || !dateTo) {
+    toast('Выберите период', true);
+    return;
+  }
+  
+  // Use direct download via browser
+  const url = `/api/payment/registry/export/excel?dateFrom=${dateFrom}T00:00:00.000Z&dateTo=${dateTo}T23:59:59.999Z`;
+  window.open(url, '_blank');
+}
+
 // ── Init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   // Если токена нет — на страницу входа
@@ -622,6 +716,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   loadAll();
+  
+  // Set default dates for payment registry (current month)
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  qs('registry-date-from').value = firstDay.toISOString().split('T')[0];
+  qs('registry-date-to').value = now.toISOString().split('T')[0];
   
   // Order filters
   qs('filter-status')?.addEventListener('change', applyOrderFilters);

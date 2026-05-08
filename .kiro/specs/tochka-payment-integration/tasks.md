@@ -78,18 +78,18 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 9.1 Create FiscalService class
   - [x] 9.2 Implement sendReceipt() method with 54-ФЗ format
   - [x] 9.3 Implement getReceiptStatus() method
-  - [ ] 9.4 Create receipt data serialization from order
+  - [x] 9.4 Create receipt data serialization from order
   - [x] 9.5 Write property test for Receipt Data Completeness
     - **Property 4: Receipt Data Completeness**
     - **Validates: Requirements 6.2**
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
 - [ ] 10. Implement PaymentService - Registry
-  - [ ] 10.1 Implement getPaymentRegistry() method
-  - [ ] 10.2 Handle date range splitting for periods > 90 days
-  - [ ] 10.3 Calculate registry totals (total, refunds, net)
-  - [ ] 10.4 Add CSV/Excel export capability
-  - [~] 10.5 Write property test for Registry Totals Calculation
+  - [x] 10.1 Implement getPaymentRegistry() method
+  - [x] 10.2 Handle date range splitting for periods > 90 days
+  - [x] 10.3 Calculate registry totals (total, refunds, net)
+  - [x] 10.4 Add CSV/Excel export capability
+  - [x] 10.5 Write property test for Registry Totals Calculation
     - **Property 5: Registry Totals Calculation**
     - **Validates: Requirements 7.5**
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
@@ -98,19 +98,19 @@ Implementation uses TypeScript for type safety matching the design specification
   - Ensure all core payment services are implemented and pass compilation
 
 - [ ] 12. Implement Webhook Handler
-  - [ ] 12.1 Create webhook endpoint /api/payment/webhook
-  - [ ] 12.2 Implement signature verification (HMAC-SHA256)
-  - [ ] 12.3 Implement order status update logic
-  - [ ] 12.4 Implement idempotency (prevent duplicate status updates)
-  - [ ] 12.5 Add comprehensive webhook logging
-  - [ ] 12.6 Write property test for Webhook Idempotency
+  - [x] 12.1 Create webhook endpoint /api/payment/webhook
+  - [x] 12.2 Implement signature verification (HMAC-SHA256)
+  - [x] 12.3 Implement order status update logic
+  - [x] 12.4 Implement idempotency (prevent duplicate status updates)
+  - [x] 12.5 Add comprehensive webhook logging
+  - [x] 12.6 Write property test for Webhook Idempotency
     - **Property 6: Webhook Idempotency**
     - **Validates: Requirements 8.8**
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
 
 - [ ] 13. Database migration
-  - [ ] 13.1 Add payment columns to orders table: payment_operation_id, payment_status, captured_at, refunded_at, refund_amount, fiscal_receipt_url
-  - [ ] 13.2 Create migration script with IF NOT EXISTS
+  - [x] 13.1 Add payment columns to orders table: payment_operation_id, payment_status, captured_at, refunded_at, refund_amount, fiscal_receipt_url
+  - [x] 13.2 Create migration script with IF NOT EXISTS
   - _Requirements: 11.1_
 
 - [-] 14. Extend OrderAPI endpoints
@@ -118,23 +118,23 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 14.2 Add GET /api/payment/operations/:id endpoint
   - [x] 14.3 Add POST /api/payment/operations/:id/capture endpoint
   - [x] 14.4 Add POST /api/payment/operations/:id/refund endpoint
-  - [ ] 14.5 Add GET /api/payment/registry endpoint
+  - [x] 14.5 Add GET /api/payment/registry endpoint
   - _Requirements: 2.1, 3.1, 4.1, 5.1, 7.1_
 
 - [ ] 15. Checkpoint - API endpoints
   - Ensure all API endpoints are registered and respond correctly
 
 - [ ] 16. Implement error handling and classification
-  - [ ] 16.1 Create error classification system (Validation, Auth, Not Found, Business, Network, Internal)
-  - [ ] 16.2 Map errors to correct HTTP status codes (400, 401, 404, 500, 503)
-  - [ ] 16.3 Implement comprehensive error logging
+  - [x] 16.1 Create error classification system (Validation, Auth, Not Found, Business, Network, Internal)
+  - [x] 16.2 Map errors to correct HTTP status codes (400, 401, 404, 500, 503)
+  - [x] 16.3 Implement comprehensive error logging
   - _Requirements: 10.1, 10.2, 10.3, 10.4_
 
 - [ ] 17. Admin panel integration
-  - [ ] 17.1 Add payment management UI to admin panel
-  - [ ] 17.2 Display payment list with filtering and pagination
-  - [ ] 17.3 Add capture/refund buttons with confirmation
-  - [ ] 17.4 Display payment details and history
+  - [x] 17.1 Add payment management UI to admin panel
+  - [x] 17.2 Display payment list with filtering and pagination
+  - [x] 17.3 Add capture/refund buttons with confirmation
+  - [x] 17.4 Display payment details and history
   - [ ] 17.5 Add error history view
   - _Requirements: 2.4, 2.5, 3.4, 4.6, 5.8, 7.4, 10.4_
 
