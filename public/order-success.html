@@ -45,12 +45,28 @@
       (function () {
         var params = new URLSearchParams(window.location.search);
         var orderId = params.get('order_id');
+        var paymentStatus = params.get('payment_status');
         var titleEl = document.getElementById('order-success-title');
         var msgEl = document.getElementById('order-success-msg');
+        
         if (orderId && titleEl) {
           titleEl.textContent = 'Заказ №' + orderId + ' принят!';
         }
-        if (msgEl) {
+        
+        // Display payment status if provided
+        if (paymentStatus && msgEl) {
+          var statusMessages = {
+            'authorized': 'Ожидается оплата. Перенаправление к платежной системе...',
+            'captured': 'Оплата подтверждена. Ждём вас на самовывоз.',
+            'refunded': 'Заказ возвращен. Средства возвращены на карту.',
+            'partial_refunded': 'Частичный возврат. Часть средств возвращена.',
+            'failed': 'Оплата не прошла. Пожалуйста, попробуйте снова.',
+            'pending': 'Оплата обрабатывается. Проверьте статус в личном кабинете.'
+          };
+          
+          var statusMsg = statusMessages[paymentStatus] || 'Оплата обрабатывается.';
+          msgEl.textContent = statusMsg;
+        } else if (msgEl) {
           msgEl.textContent = 'Ждём вас на самовывоз.';
         }
       })();

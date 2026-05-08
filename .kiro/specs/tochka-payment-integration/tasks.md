@@ -74,7 +74,7 @@ Implementation uses TypeScript for type safety matching the design specification
     - **Validates: Requirements 5.6**
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9_
 
-- [-] 9. Implement FiscalService for receipts
+- [x] 9. Implement FiscalService for receipts
   - [x] 9.1 Create FiscalService class
   - [x] 9.2 Implement sendReceipt() method with 54-ФЗ format
   - [x] 9.3 Implement getReceiptStatus() method
@@ -84,7 +84,7 @@ Implementation uses TypeScript for type safety matching the design specification
     - **Validates: Requirements 6.2**
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-- [ ] 10. Implement PaymentService - Registry
+- [x] 10. Implement PaymentService - Registry
   - [x] 10.1 Implement getPaymentRegistry() method
   - [x] 10.2 Handle date range splitting for periods > 90 days
   - [x] 10.3 Calculate registry totals (total, refunds, net)
@@ -94,10 +94,10 @@ Implementation uses TypeScript for type safety matching the design specification
     - **Validates: Requirements 7.5**
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
 
-- [ ] 11. Checkpoint - Core services implementation
+- [x] 11. Checkpoint - Core services implementation
   - Ensure all core payment services are implemented and pass compilation
 
-- [ ] 12. Implement Webhook Handler
+- [x] 12. Implement Webhook Handler
   - [x] 12.1 Create webhook endpoint /api/payment/webhook
   - [x] 12.2 Implement signature verification (HMAC-SHA256)
   - [x] 12.3 Implement order status update logic
@@ -108,12 +108,12 @@ Implementation uses TypeScript for type safety matching the design specification
     - **Validates: Requirements 8.8**
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
 
-- [ ] 13. Database migration
+- [x] 13. Database migration
   - [x] 13.1 Add payment columns to orders table: payment_operation_id, payment_status, captured_at, refunded_at, refund_amount, fiscal_receipt_url
   - [x] 13.2 Create migration script with IF NOT EXISTS
   - _Requirements: 11.1_
 
-- [-] 14. Extend OrderAPI endpoints
+- [x] 14. Extend OrderAPI endpoints
   - [x] 14.1 Add GET /api/payment/operations endpoint
   - [x] 14.2 Add GET /api/payment/operations/:id endpoint
   - [x] 14.3 Add POST /api/payment/operations/:id/capture endpoint
@@ -121,36 +121,36 @@ Implementation uses TypeScript for type safety matching the design specification
   - [x] 14.5 Add GET /api/payment/registry endpoint
   - _Requirements: 2.1, 3.1, 4.1, 5.1, 7.1_
 
-- [ ] 15. Checkpoint - API endpoints
+- [x] 15. Checkpoint - API endpoints
   - Ensure all API endpoints are registered and respond correctly
 
-- [ ] 16. Implement error handling and classification
+- [x] 16. Implement error handling and classification
   - [x] 16.1 Create error classification system (Validation, Auth, Not Found, Business, Network, Internal)
   - [x] 16.2 Map errors to correct HTTP status codes (400, 401, 404, 500, 503)
   - [x] 16.3 Implement comprehensive error logging
   - _Requirements: 10.1, 10.2, 10.3, 10.4_
 
-- [ ] 17. Admin panel integration
+- [x] 17. Admin panel integration
   - [x] 17.1 Add payment management UI to admin panel
   - [x] 17.2 Display payment list with filtering and pagination
   - [x] 17.3 Add capture/refund buttons with confirmation
   - [x] 17.4 Display payment details and history
-  - [ ] 17.5 Add error history view
+  - [x] 17.5 Add error history view
   - _Requirements: 2.4, 2.5, 3.4, 4.6, 5.8, 7.4, 10.4_
 
-- [ ] 18. Frontend cart integration
-  - [ ] 18.1 Update CartUI to handle payment_url redirect
-  - [ ] 18.2 Add success/failure redirect handling
-  - [ ] 18.3 Display payment status to customer
+- [x] 18. Frontend cart integration
+  - [x] 18.1 Update CartUI to handle payment_url redirect
+  - [x] 18.2 Add success/failure redirect handling
+  - [x] 18.3 Display payment status to customer
   - _Requirements: 1.5, 11.4_
 
-- [ ] 19. Checkpoint - Full integration
+- [x] 19. Checkpoint - Full integration
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 20. Production configuration
-  - [ ] 20.1 Configure production API endpoint (https://enter.tochka.com)
-  - [ ] 20.2 Verify HTTPS usage for all API calls
-  - [ ] 20.3 Final security review
+- [x] 20. Production configuration
+  - [x] 20.1 Configure production API endpoint (https://enter.tochka.com)
+  - [x] 20.2 Verify HTTPS usage for all API calls
+  - [x] 20.3 Final security review
   - _Requirements: 9.4, 9.6, 10.6_
 
 ## Notes
