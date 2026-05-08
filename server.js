@@ -72,7 +72,16 @@ async function initDB() {
     fiscal_status        TEXT    DEFAULT 'pending',
     fiscal_error         TEXT
   )`);
-  
+
+  // Migration: Add order_number column if it doesn't exist (for existing databases)
+  try {
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT`);
+  } catch (err) {
+    if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+      console.log('Migration: order_number column check:', err.message);
+    }
+  }
+
   // Order status history table
   await pool.query(`CREATE TABLE IF NOT EXISTS order_status_history (
     id            SERIAL PRIMARY KEY,
