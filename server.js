@@ -73,14 +73,33 @@ async function initDB() {
     fiscal_error         TEXT
   )`);
 
-  // Migration: Add order_number column if it doesn't exist (for existing databases)
-  try {
-    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT`);
-  } catch (err) {
-    if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
-      console.log('Migration: order_number column check:', err.message);
+  // Migration: Add missing columns for existing databases
+  const migrations = [
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_type TEXT DEFAULT \'self\'',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_cost REAL DEFAULT 0',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_time TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_time TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_comment TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS tableware_count INTEGER DEFAULT 1',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS items_count INTEGER',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_type TEXT DEFAULT \'self\'',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT \'pending\'',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_operation_id TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_url TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id TEXT'
+  ];
+  
+  for (const sql of migrations) {
+    try {
+      await pool.query(sql);
+    } catch (err) {
+      // Ignore if column already exists
     }
   }
+  console.log('Migration: Database schema updated');
 
   // Order status history table
   await pool.query(`CREATE TABLE IF NOT EXISTS order_status_history (

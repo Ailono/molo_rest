@@ -3,10 +3,10 @@
 ## Task List
 
 - [x] 1. Add ALTER TABLE migration to initDB function in server.js
-- [ ] 2. Verify the fix works on existing database (test migration)
-- [ ] 3. Verify new order creation works with order_number generation
-- [ ] 4. Verify existing order data is preserved after migration
-- [ ] 5. Test order number format (MOLO-YYYY-NNNN)
+- [x] 2. Verify the fix works on existing database (test migration)
+- [x] 3. Verify new order creation works with order_number generation
+- [x] 4. Verify existing order data is preserved after migration
+- [x] 5. Test order number format (MOLO-YYYY-NNNN)
 
 ## Task Details
 
