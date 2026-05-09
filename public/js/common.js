@@ -1,3 +1,11 @@
+// Инициализация флага preview (для корзины)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('preview') === '1') {
+    sessionStorage.setItem('molo_preview', '1');
+  }
+})();
+
 function setActiveNav() {
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const map = {
