@@ -89,7 +89,9 @@ async function initDB() {
     'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT \'pending\'',
     'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_operation_id TEXT',
     'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_url TEXT',
-    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id TEXT'
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id TEXT',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS offer_accepted BOOLEAN DEFAULT FALSE',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS pdpa_consent BOOLEAN DEFAULT FALSE'
   ];
   
   for (const sql of migrations) {
@@ -1943,11 +1945,30 @@ app.post('/api/orders', async (req, res) => {
     pickup_time,
     delivery_comment,
     tableware_count,
-    payment_method
+    payment_method,
+    offer_accepted,
+    pdpa_consent
   } = req.body;
   
+  // Валидация обязательных полей
   if (!customer_name || !customer_phone || !Array.isArray(items) || items.length === 0 || total_amount == null) {
     return res.status(400).json({ error: 'Необходимо указать customer_name, customer_phone, items и total_amount' });
+  }
+  
+  // Валидация согласия с офертой
+  if (!offer_accepted || offer_accepted !== true) {
+    return res.status(400).json({ 
+      error: 'Необходимо согласиться с офертой',
+      field: 'offer_accepted'
+    });
+  }
+  
+  // Валидация согласия на обработку ПДн
+  if (!pdpa_consent || pdpa_consent !== true) {
+    return res.status(400).json({ 
+      error: 'Необходимо согласиться на обработку персональных данных',
+      field: 'pdpa_consent'
+    });
   }
   
   try {
@@ -1971,8 +1992,8 @@ app.post('/api/orders', async (req, res) => {
         customer_name, customer_phone, customer_email, items, total_amount,
         delivery_type, delivery_address, delivery_time, pickup_time, delivery_comment,
         items_count, order_number, tableware_count, payment_method,
-        delivery_cost
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+        delivery_cost, offer_accepted, pdpa_consent
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
       [
         customer_name, 
         customer_phone, 
@@ -1988,7 +2009,9 @@ app.post('/api/orders', async (req, res) => {
         orderNumber,
         tableware_count || 1,
         payment_method || null,
-        deliveryCost
+        deliveryCost,
+        offer_accepted,
+        pdpa_consent
       ]
     );
     

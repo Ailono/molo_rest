@@ -155,6 +155,25 @@
           </div>
 
           <span class="field-error" id="order-form-error" style="display:none;"></span>
+
+          <!-- Legal agreements -->
+          <div class="cart-legal-agreements">
+            <div class="agreement-checkbox">
+              <input type="checkbox" id="order-offer-accepted" name="offer_accepted" />
+              <label for="order-offer-accepted">
+                Я согласен с <a href="/offer.html" target="_blank">условиями оферты</a>
+              </label>
+              <span class="field-error" id="order-offer-error" style="display:none;"></span>
+            </div>
+            <div class="agreement-checkbox">
+              <input type="checkbox" id="order-pdpa-consent" name="pdpa_consent" />
+              <label for="order-pdpa-consent">
+                Я согласен на <a href="/privacy.html" target="_blank">обработку персональных данных</a>
+              </label>
+              <span class="field-error" id="order-pdpa-error" style="display:none;"></span>
+            </div>
+          </div>
+
           <button class="btn" id="order-submit-btn" type="button">Оформить заказ</button>
         </div>
       </div>

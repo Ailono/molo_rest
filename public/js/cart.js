@@ -9,6 +9,12 @@
   // ── Внутреннее состояние ──────────────────────────────────────────────────
   let _items = []; // CartItem[]
   let _storageAvailable = false;
+  
+  // Состояние согласий
+  let _agreements = {
+    offer_accepted: false,
+    pdpa_consent: false
+  };
 
   function _checkStorage() {
     try {
@@ -36,6 +42,119 @@
       localStorage.setItem('molo_cart', JSON.stringify(_items));
     } catch (e) {
       // ignore
+    }
+  }
+
+  // ── Согласия (оферта и ПДн) ───────────────────────────────────────────────
+
+  /**
+   * Валидация согласий перед отправкой
+   * Validates: Requirements 1.4, 2.4, 3.1, 3.2, 3.3, 3.4
+   */
+  function _validateAgreements() {
+    const offerCheckbox = document.getElementById('order-offer-accepted');
+    const pdpaCheckbox = document.getElementById('order-pdpa-consent');
+    
+    const offerError = document.getElementById('order-offer-error');
+    const pdpaError = document.getElementById('order-pdpa-error');
+    
+    let valid = true;
+    
+    // Сброс ошибок
+    if (offerError) { offerError.textContent = ''; offerError.style.display = 'none'; }
+    if (pdpaError) { pdpaError.textContent = ''; pdpaError.style.display = 'none'; }
+    
+    // Проверка оферты
+    if (!offerCheckbox || !offerCheckbox.checked) {
+      if (offerError) {
+        offerError.textContent = 'Необходимо согласиться с офертой';
+        offerError.style.display = 'block';
+      }
+      valid = false;
+    }
+    
+    // Проверка согласия на ПДн
+    if (!pdpaCheckbox || !pdpaCheckbox.checked) {
+      if (pdpaError) {
+        pdpaError.textContent = 'Необходимо согласиться на обработку персональных данных';
+        pdpaError.style.display = 'block';
+      }
+      valid = false;
+    }
+    
+    return valid;
+  }
+
+  /**
+   * Сохранение согласий в localStorage
+   * Validates: Requirements 4.1, 4.2
+   */
+  function _saveAgreements() {
+    const offerCheckbox = document.getElementById('order-offer-accepted');
+    const pdpaCheckbox = document.getElementById('order-pdpa-consent');
+    
+    if (offerCheckbox) _agreements.offer_accepted = offerCheckbox.checked;
+    if (pdpaCheckbox) _agreements.pdpa_consent = pdpaCheckbox.checked;
+    
+    try {
+      localStorage.setItem('molo_cart_agreements', JSON.stringify(_agreements));
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  /**
+   * Загрузка согласий из localStorage
+   * Validates: Requirements 4.1, 4.2
+   */
+  function _loadAgreements() {
+    try {
+      const raw = localStorage.getItem('molo_cart_agreements');
+      if (raw) {
+        _agreements = JSON.parse(raw);
+      }
+    } catch (e) {
+      _agreements = { offer_accepted: false, pdpa_consent: false };
+    }
+  }
+
+  /**
+   * Восстановление чекбоксов при открытии формы
+   * Validates: Requirements 4.2
+   */
+  function _restoreAgreements() {
+    const offerCheckbox = document.getElementById('order-offer-accepted');
+    const pdpaCheckbox = document.getElementById('order-pdpa-consent');
+    
+    if (offerCheckbox) offerCheckbox.checked = _agreements.offer_accepted;
+    if (pdpaCheckbox) pdpaCheckbox.checked = _agreements.pdpa_consent;
+  }
+
+  /**
+   * Сброс согласий
+   * Validates: Requirements 4.3
+   */
+  function _resetAgreements() {
+    _agreements = { offer_accepted: false, pdpa_consent: false };
+    try {
+      localStorage.removeItem('molo_cart_agreements');
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  /**
+   * Настройка обработчиков событий для чекбоксов согласий
+   */
+  function _setupAgreementListeners() {
+    const offerCheckbox = document.getElementById('order-offer-accepted');
+    const pdpaCheckbox = document.getElementById('order-pdpa-consent');
+    
+    if (offerCheckbox) {
+      offerCheckbox.addEventListener('change', _saveAgreements);
+    }
+    if (pdpaCheckbox) {
+      pdpaCheckbox.addEventListener('change', _saveAgreements);
     }
   }
 
@@ -203,6 +322,11 @@
       });
       const errMsg = document.getElementById('order-form-error');
       if (errMsg) { errMsg.textContent = ''; errMsg.style.display = 'none'; }
+      
+      // Восстановить состояние чекбоксов согласий
+      _restoreAgreements();
+      // Настроить обработчики событий для чекбоксов
+      _setupAgreementListeners();
     }
   }
 
@@ -252,6 +376,11 @@
 
     if (!name) {
       if (nameErr) { nameErr.textContent = 'Введите имя'; nameErr.style.display = 'block'; }
+      valid = false;
+    }
+
+    // Валидация согласий (оферта и ПДн)
+    if (!_validateAgreements()) {
       valid = false;
     }
 
@@ -426,6 +555,7 @@
       }
 
       _loadFromStorage();
+      _loadAgreements();
 
       // Показать иконку корзины только если флаг активен
       const iconWrap = document.getElementById('cart-icon-wrap');
@@ -501,6 +631,8 @@
       _items = [];
       _saveToStorage();
       _renderCounter();
+      // Сбросить согласия при очистке корзины
+      _resetAgreements();
     },
 
     // Экспортируем для тестов
