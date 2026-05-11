@@ -213,7 +213,7 @@ h1, h2, h3,
 
 /* Features */
 .features-section{
-  padding: 28px 0 0;
+  padding: 16px 0 0;
 }
 .features-grid{
   display: grid;
@@ -290,7 +290,7 @@ h1, h2, h3,
 
 /* Sections */
 .section{
-  padding: 18px 0 52px;
+  padding: 12px 0 32px;
 }
 .section-title{
   margin: 0 0 12px;
