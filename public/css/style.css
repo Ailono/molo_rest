@@ -63,6 +63,9 @@ h1, h2, h3,
   justify-content:space-between;
   padding: 14px 0;
   gap: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 20px;
 }
 .brand{
   display:flex;
@@ -71,9 +74,9 @@ h1, h2, h3,
   flex-shrink: 0;
 }
 .brand img{
-  height: 48px;
+  height: 240px;
   width: auto;
-  max-width: 160px;
+  max-width: 300px;
   object-fit: contain;
   display: block;
   border-radius: 8px;
@@ -132,7 +135,8 @@ h1, h2, h3,
   background-position: center;
   background-repeat: no-repeat;
   min-height: 400px;
-  width: 100%;
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
   box-sizing: border-box;
 }
 
