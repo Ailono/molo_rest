@@ -132,6 +132,9 @@ h1, h2, h3,
   background-position: center;
   background-repeat: no-repeat;
   min-height: 400px;
+  padding: 24px;
+  box-sizing: border-box;
+  border-radius: var(--radius);
 }
 
 @keyframes float {
