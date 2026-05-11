@@ -22,7 +22,7 @@
 
       /* Hero with gradient */
       .preview-hero {
-        background: var(--cream) !important;
+        background: #F5F0E6 !important;
         position: relative;
         overflow: hidden;
         padding: 60px 0 !important;
@@ -133,6 +133,15 @@
         color: #2a1f1a !important;
         font-weight: 600 !important;
         text-shadow: 0 0 20px rgba(255,255,255,0.8);
+        background: rgba(255,255,255,0.7);
+        padding: 8px 16px;
+        border-radius: 8px;
+        display: inline-block;
+      }
+
+      .preview-hero::before,
+      .preview-hero::after {
+        display: none !important;
       }
 
       /* Popular dishes */
