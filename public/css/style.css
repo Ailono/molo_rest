@@ -74,9 +74,9 @@ h1, h2, h3,
   flex-shrink: 0;
 }
 .brand img{
-  height: 240px;
+  height: 48px;
   width: auto;
-  max-width: 300px;
+  max-width: 160px;
   object-fit: contain;
   display: block;
   border-radius: 8px;
