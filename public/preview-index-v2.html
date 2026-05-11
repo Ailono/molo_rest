@@ -25,13 +25,21 @@
         background: linear-gradient(135deg, var(--cream) 0%, var(--sand) 100%);
         position: relative;
         overflow: hidden;
-        min-height: 400px;
+      }
+      
+      .preview-hero.hero {
+        padding: 0;
+        min-height: 420px;
         display: flex;
         align-items: center;
       }
       
       .preview-hero .hero-grid {
-        align-items: center;
+        width: 100%;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center;
+        min-height: 420px;
       }
       
       .preview-hero::before {
