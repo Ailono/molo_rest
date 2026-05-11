@@ -1,15 +1,20 @@
 ﻿:root{
   --bg: #F5F0E6;
-  --ink: #2b3a52;
+  --ink: #4E3B31;
   --muted: #6b7a8d;
-  --accent: #1e3a5f;
-  --accent-2: #152d4a;
+  --accent: #4E3B31;
+  --accent-2: #3D2E24;
   --card: rgba(255,255,255,.55);
-  --border: rgba(30,58,95,.25);
+  --border: rgba(78,59,49,.25);
   --shadow: 0 12px 40px rgba(0,0,0,.10);
   --radius: 18px;
   --radius-sm: 12px;
   --container: 1120px;
+}
+
+@font-face {
+  font-family: 'Novoposelensky';
+  src: url('/font/Novoposelensky.otf');
 }
 
 *{ box-sizing:border-box; }
@@ -18,7 +23,7 @@ body{
   margin:0;
   background: var(--bg);
   color: var(--ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
+  font-family: 'Novoposelensky', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
   line-height: 1.35;
 }
 
@@ -119,8 +124,8 @@ h1, h2, h3,
 }
 .hero-grid{
   display:grid;
-  grid-template-columns: 1fr 420px;
-  gap: 28px;
+  grid-template-columns: 1fr;
+  gap: 0;
   align-items: stretch;
 }
 .headline{
