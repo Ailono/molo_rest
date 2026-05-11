@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Molo — бистро (PREVIEW)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      /* Preview styles - additional colors and layouts */
+      :root {
+        --mocha: #4E3B31;
+        --mocha-light: #6B554A;
+        --mocha-dark: #3D2E24;
+        /* Accent colors */
+        --olive: #7A8B5C;
+        --terracotta: #C4785A;
+        --wine: #7A3B4A;
+        --sage: #9CAF88;
+        --cream: #F5F0E6;
+        --sand: #E8E0D5;
+      }
+
+      /* Hero improvements */
+      .preview-hero {
+        background: linear-gradient(135deg, var(--cream) 0%, var(--sand) 100%);
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .preview-hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -20%;
+        width: 60%;
+        height: 200%;
+        background: radial-gradient(ellipse, rgba(122,139,92,0.08) 0%, transparent 70%);
+        pointer-events: none;
+      }
+
+      .preview-hero::after {
+        content: '';
+        position: absolute;
+        bottom: -30%;
+        left: -10%;
+        width: 40%;
+        height: 150%;
+        background: radial-gradient(ellipse, rgba(196,120,90,0.06) 0%, transparent 70%);
+        pointer-events: none;
+      }
+
+      .hero-content {
+        position: relative;
+        z-index: 1;
+      }
+
+      /* Popular dishes section */
+      .popular-section {
+        padding: 48px 0 32px;
+        background: var(--sand);
+        position: relative;
+      }
+
+      .popular-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, var(--olive), var(--terracotta), var(--wine));
+      }
+
+      .section-header {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+
+      .section-header .kicker {
+        color: var(--olive);
+      }
+
+      .popular-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+      }
+
+      .popular-card {
+        background: #fff;
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: 0 8px 24px rgba(78,59,49,0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        cursor: pointer;
+      }
+
+      .popular-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 16px 36px rgba(78,59,49,0.15);
+      }
+
+      .popular-card .image {
+        height: 140px;
+        background: linear-gradient(135deg, var(--sand) 0%, #d8cfc2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+      }
+
+      .popular-card .body {
+        padding: 16px;
+      }
+
+      .popular-card .dish-name {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--mocha);
+        margin-bottom: 4px;
+      }
+
+      .popular-card .dish-price {
+        font-weight: 800;
+        color: var(--terracotta);
+      }
+
+      /* Features with colors */
+      .features-section {
+        padding: 48px 0 32px;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+
+      .feature-card.color-1 {
+        border-left: 4px solid var(--olive);
+      }
+
+      .feature-card.color-2 {
+        border-left: 4px solid var(--terracotta);
+      }
+
+      .feature-card.color-3 {
+        border-left: 4px solid var(--wine);
+      }
+
+      .feature-card .feature-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .feature-icon-lg {
+        font-size: 28px;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(122,139,92,0.1);
+        border-radius: 50%;
+      }
+
+      .color-1 .feature-icon-lg { background: rgba(122,139,92,0.12); }
+      .color-2 .feature-icon-lg { background: rgba(196,120,90,0.12); }
+      .color-3 .feature-icon-lg { background: rgba(122,59,74,0.12); }
+
+      /* Reviews section */
+      .reviews-section {
+        padding: 48px 0 32px;
+        background: var(--cream);
+      }
+
+      .reviews-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+
+      .review-card {
+        background: #fff;
+        padding: 24px;
+        border-radius: var(--radius);
+        box-shadow: 0 4px 16px rgba(78,59,49,0.08);
+      }
+
+      .review-card .stars {
+        color: var(--terracotta);
+        font-size: 18px;
+        margin-bottom: 12px;
+      }
+
+      .review-card .text {
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--mocha-light);
+        margin-bottom: 16px;
+        font-style: italic;
+      }
+
+      .review-card .author {
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--mocha);
+      }
+
+      /* Delivery section */
+      .delivery-section {
+        padding: 48px 0 32px;
+        background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .delivery-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      }
+
+      .delivery-content {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+      }
+
+      .delivery-content h2 {
+        color: #fff;
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 32px;
+        margin-bottom: 16px;
+      }
+
+      .delivery-content p {
+        opacity: 0.9;
+        max-width: 500px;
+        margin: 0 auto 24px;
+        font-size: 16px;
+      }
+
+      .delivery-features {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        margin-bottom: 32px;
+      }
+
+      .delivery-feature {
+        text-align: center;
+      }
+
+      .delivery-feature .icon {
+        font-size: 36px;
+        margin-bottom: 8px;
+      }
+
+      .delivery-feature .label {
+        font-size: 13px;
+        opacity: 0.85;
+      }
+
+      .btn-light {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px 32px;
+        border-radius: 999px;
+        border: 2px solid #fff;
+        background: #fff;
+        color: var(--mocha);
+        font-weight: 700;
+        font-size: 15px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .btn-light:hover {
+        background: transparent;
+        color: #fff;
+      }
+
+      .btn-outline-light {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px 32px;
+        border-radius: 999px;
+        border: 2px solid #fff;
+        background: transparent;
+        color: #fff;
+        font-weight: 700;
+        font-size: 15px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-left: 12px;
+      }
+
+      .btn-outline-light:hover {
+        background: rgba(255,255,255,0.1);
+      }
+
+      /* Location section */
+      .location-section {
+        padding: 48px 0 32px;
+      }
+
+      .location-card {
+        background: #fff;
+        border-radius: var(--radius);
+        padding: 32px;
+        box-shadow: 0 8px 32px rgba(78,59,49,0.1);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+        align-items: center;
+      }
+
+      .location-info h2 {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 28px;
+        color: var(--mocha);
+        margin-bottom: 20px;
+      }
+
+      .location-details {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .location-detail {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 16px;
+      }
+
+      .location-detail .icon {
+        width: 40px;
+        height: 40px;
+        background: var(--sand);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+      }
+
+      .location-map {
+        height: 280px;
+        background: linear-gradient(135deg, var(--sand) 0%, #d8cfc2 100%);
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 64px;
+      }
+
+      /* Responsive */
+      @media (max-width: 900px) {
+        .popular-grid { grid-template-columns: repeat(2, 1fr); }
+        .features-grid { grid-template-columns: 1fr; }
+        .reviews-grid { grid-template-columns: 1fr; }
+        .location-card { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 560px) {
+        .popular-grid { grid-template-columns: 1fr; }
+        .delivery-features { flex-direction: column; gap: 24px; }
+        .delivery-buttons { display: flex; flex-direction: column; gap: 12px; }
+        .btn-outline-light { margin-left: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="На главную">
+          <img id="site-logo" src="/images/new-logo.png" alt="Molo" />
+        </a>
+        <nav class="nav" aria-label="Навигация">
+          <a href="/menu.html">Меню</a>
+          <a href="/delivery.html" class="nav-delivery">Заказать доставку</a>
+          <a href="/contacts.html">Контакты</a>
+          <a href="/about.html">О нас</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <!-- Hero Section -->
+      <section class="hero preview-hero">
+        <div class="container">
+          <div class="hero-grid">
+            <div class="headline hero-content">
+              <div class="kicker">Моло бистро</div>
+              <h1>МОЛО — это современная интерпретация итальянской классики</h1>
+              <p>Утром — зарядиться вкусным завтраком. Днём — сытный ланч с пастой и деловые встречи. Вечером — уютный свет, бокал игристого и пицца с тигровыми бортиками.</p>
+              <div class="cta-row">
+                <a class="btn" href="/menu.html">Наше меню</a>
+                <a class="btn secondary" href="/contacts.html">Как добраться</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Popular Dishes -->
+      <section class="popular-section">
+        <div class="container">
+          <div class="section-header">
+            <div class="kicker">Хиты сезона</div>
+            <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 28px; color: var(--mocha); margin: 8px 0 0;">Популярные блюда</h2>
+          </div>
+          <div class="popular-grid">
+            <div class="popular-card">
+              <div class="image">🍕</div>
+              <div class="body">
+                <div class="dish-name">Пицца Пепперони</div>
+                <div class="dish-price">890 ₽</div>
+              </div>
+            </div>
+            <div class="popular-card">
+              <div class="image">🍝</div>
+              <div class="body">
+                <div class="dish-name">Паста Карбонара</div>
+                <div class="dish-price">650 ₽</div>
+              </div>
+            </div>
+            <div class="popular-card">
+              <div class="image">🥗</div>
+              <div class="body">
+                <div class="dish-name">Салат Цезарь</div>
+                <div class="dish-price">490 ₽</div>
+              </div>
+            </div>
+            <div class="popular-card">
+              <div class="image">🍰</div>
+              <div class="body">
+                <div class="dish-name">Тирамису</div>
+                <div class="dish-price">380 ₽</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features with colors -->
+      <section class="features-section">
+        <div class="container">
+          <div class="features-grid">
+            <div class="feature-card color-1">
+              <div class="feature-title">
+                <div class="feature-icon-lg">🥗</div>
+                Свежие продукты
+              </div>
+              <div class="feature-text">Ежедневные поставки овощей и зелени с фермерских хозяйств. Качество, которому можно доверять.</div>
+            </div>
+            <div class="feature-card color-2">
+              <div class="feature-title">
+                <div class="feature-icon-lg">🔥</div>
+                Итальянская печь
+              </div>
+              <div class="feature-text">Настоящая дровяная печь для пиццы. Тигровые бортики, хрустящее тесто, неповторимый вкус.</div>
+            </div>
+            <div class="feature-card color-3">
+              <div class="feature-title">
+                <div class="feature-icon-lg">🍷</div>
+                Винная карта
+              </div>
+              <div class="feature-text">Подобранные вина из лучших регионов Италии. Консультации сомелье по выбору.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Reviews -->
+      <section class="reviews-section">
+        <div class="container">
+          <div class="section-header">
+            <div class="kicker">Отзывы гостей</div>
+            <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 28px; color: var(--mocha); margin: 8px 0 0;">Нам доверяют</h2>
+          </div>
+          <div class="reviews-grid">
+            <div class="review-card">
+              <div class="stars">★★★★★</div>
+              <div class="text">"Лучшая пицца в Москве! Тесто воздушное, начинки щедрые. Обязательно вернёмся снова."</div>
+              <div class="author">— Анна К.</div>
+            </div>
+            <div class="review-card">
+              <div class="stars">★★★★★</div>
+              <div class="text">"Уютная атмосфера, внимательный персонал. Паста карбонара — просто бомба!"</div>
+              <div class="author">— Дмитрий С.</div>
+            </div>
+            <div class="review-card">
+              <div class="stars">★★★★★</div>
+              <div class="text">"Отличное мес��о для делового обеда. Вкусно, быстро, приятная обстановка."</div>
+              <div class="author">— Елена М.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Delivery -->
+      <section class="delivery-section">
+        <div class="container">
+          <div class="delivery-content">
+            <h2>Доставка на дом</h2>
+            <p>Наслаждайтесь любимыми блюдами Molo не выходя из дома. Быстрая доставка по Москве.</p>
+            <div class="delivery-features">
+              <div class="delivery-feature">
+                <div class="icon">🚗</div>
+                <div class="label">От 30 минут</div>
+              </div>
+              <div class="delivery-feature">
+                <div class="icon">📦</div>
+                <div class="label">Бесплатно от 2000 ₽</div>
+              </div>
+              <div class="delivery-feature">
+                <div class="icon">🎁</div>
+                <div class="label">Скидка 10% на самовывоз</div>
+              </div>
+            </div>
+            <div class="delivery-buttons">
+              <a class="btn-light" href="/delivery.html">Заказать доставку</a>
+              <a class="btn-outline-light" href="/menu.html">Самовывоз</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Location -->
+      <section class="location-section">
+        <div class="container">
+          <div class="location-card">
+            <div class="location-info">
+              <h2>Где мы находимся</h2>
+              <div class="location-details">
+                <div class="location-detail">
+                  <div class="icon">📍</div>
+                  <div>Москва, Причальный проезд, 10к1</div>
+                </div>
+                <div class="location-detail">
+                  <div class="icon">🕐</div>
+                  <div>Ежедневно 11:00 – 23:00</div>
+                </div>
+                <div class="location-detail">
+                  <div class="icon">📞</div>
+                  <div>+7 (495) 123-45-67</div>
+                </div>
+              </div>
+            </div>
+            <div class="location-map">🗺️</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">© Molo</div>
+    </footer>
+  </body>
+</html>
