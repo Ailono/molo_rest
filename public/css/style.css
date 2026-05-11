@@ -137,6 +137,7 @@ h1, h2, h3,
   min-height: 400px;
   width: 100%;
   box-sizing: border-box;
+  border-radius: var(--radius);
 }
 
 @keyframes float {
