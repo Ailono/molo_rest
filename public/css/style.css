@@ -132,9 +132,8 @@ h1, h2, h3,
   background-position: center;
   background-repeat: no-repeat;
   min-height: 400px;
-  padding: 24px;
+  width: 100%;
   box-sizing: border-box;
-  border-radius: var(--radius);
 }
 
 @keyframes float {
@@ -147,10 +146,8 @@ h1, h2, h3,
 }
 .headline{
   padding: 36px 32px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: rgba(255,255,255,.15);
-  box-shadow: var(--shadow);
+  border: none;
+  background: transparent;
 }
 .kicker{
   color: var(--accent);
