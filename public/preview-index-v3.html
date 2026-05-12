@@ -205,20 +205,17 @@
 
       /* CTA Banner */
       .cta-banner {
-        padding: 56px 0;
-        background-image: url('/images/background.jpg');
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
+        padding: 56px 32px;
+        background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
         color: #fff;
         text-align: center;
         position: relative;
         overflow: hidden;
-        min-height: 300px;
-        display: flex;
-        align-items: center;
         border-radius: var(--radius);
         box-sizing: border-box;
+        width: 100%;
+        display: flex;
+        justify-content: center;
       }
 
       .cta-banner::before {
@@ -238,7 +235,6 @@
         flex-direction: column;
         align-items: center;
         gap: 12px;
-        animation: float 3s ease-in-out infinite;
       }
 
       .cta-banner h2 {
