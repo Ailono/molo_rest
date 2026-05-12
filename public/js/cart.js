@@ -458,11 +458,17 @@
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Отправка…'; }
 
     try {
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

@@ -2020,8 +2020,10 @@ app.post('/api/orders', async (req, res) => {
     
     // Create Tochka payment if needed
     if (payment_method && payment_method !== 'cash') {
+      console.log('[OrderAPI] Creating payment for order:', order.id, 'payment_method:', payment_method);
       // Initialize PaymentService if needed
       const paymentService = createPaymentService();
+      console.log('[OrderAPI] PaymentService:', paymentService ? 'created' : 'null');
       if (paymentService) {
         const paymentResult = await paymentService.createPaymentOperation(order);
         
