@@ -130,7 +130,7 @@ h1, h2, h3,
   grid-template-columns: 1fr;
   gap: 0;
   align-items: stretch;
-  background-image: url('/images/background.jpg');
+  background-image: url('/images/background.jpeg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
