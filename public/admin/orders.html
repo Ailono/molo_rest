@@ -221,7 +221,10 @@
             '<td>' + type + '</td>' +
             '<td><b>' + total + ' ₽</b></td>' +
             '<td><span class="status-pill ' + statusClass + '">' + statusText + '</span></td>' +
-            '<td><button class="btn-edit" onclick="showOrderDetails(' + o.id + ')">Подробнее</button></td>' +
+            '<td>' +
+              '<button class="btn-edit" onclick="showOrderDetails(' + o.id + ')">Подробнее</button>' +
+              '<button class="btn-danger" onclick="deleteOrder(' + o.id + ')" style="margin-left:6px;">Удалить</button>' +
+            '</td>' +
           '</tr>';
         }).join('');
       }
@@ -267,6 +270,18 @@
         t.textContent = msg;
         t.className = 'toast' + (err ? ' err' : '') + ' show';
         setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      async function deleteOrder(id) {
+        if (!confirm('Удалить заказ? Это действие нельзя отменить.')) return;
+
+        try {
+          await api('/api/orders/' + id, { method: 'DELETE' });
+          showToast('Заказ удалён');
+          loadOrders();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
       }
 
       function exportOrders() {

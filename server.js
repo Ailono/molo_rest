@@ -2132,6 +2132,19 @@ app.put('/api/orders/:id/status', adminAuth, async (req, res) => {
   }
 });
 
+// DELETE order
+app.delete('/api/orders/:id', adminAuth, async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    await pool.query('DELETE FROM orders WHERE id = $1', [id]);
+    res.status(204).send();
+  } catch (e) {
+    console.error('Ошибка удаления заказа:', e);
+    res.status(500).json({ error: 'Ошибка удаления заказа' });
+  }
+});
+
 // Delivery settings API
 app.get('/api/settings/delivery', async (req, res) => {
   try {
