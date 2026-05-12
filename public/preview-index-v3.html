@@ -206,11 +206,19 @@
       /* CTA Banner */
       .cta-banner {
         padding: 56px 0;
-        background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
+        background-image: url('/images/background.jpg');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
         color: #fff;
         text-align: center;
         position: relative;
         overflow: hidden;
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        border-radius: var(--radius);
+        box-sizing: border-box;
       }
 
       .cta-banner::before {
@@ -226,22 +234,28 @@
       .cta-banner-content {
         position: relative;
         z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        animation: float 3s ease-in-out infinite;
       }
 
       .cta-banner h2 {
         font-family: 'Playfair Display', Georgia, serif;
         font-size: 36px;
-        margin: 0 0 12px;
+        margin: 0;
         color: #fff;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5);
       }
 
       .cta-banner p {
         font-size: 18px;
-        opacity: 0.9;
-        margin: 0 0 28px;
+        font-weight: 600;
+        margin: 0;
         max-width: 500px;
-        margin-left: auto;
-        margin-right: auto;
+        color: #fff;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5);
       }
 
       .cta-buttons {
@@ -249,6 +263,7 @@
         justify-content: center;
         gap: 16px;
         flex-wrap: wrap;
+        margin-top: 8px;
       }
 
       .btn-primary-large {
