@@ -653,7 +653,8 @@ class TochkaPaymentService {
    */
   _createStubPayment(order) {
     const paymentOperationId = `po_${order.id}_${Date.now()}`;
-    const paymentUrl = `https://payment.tochka.com/pay/${paymentOperationId}`;
+    // Use local success page for stub (external tochka.com won't load in iframe)
+    const paymentUrl = `/order-success.html?payment_id=${paymentOperationId}&stub=1`;
 
     return {
       success: true,
