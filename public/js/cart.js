@@ -419,6 +419,8 @@
       items,
       total_amount,
       delivery_cost,
+      offer_accepted: _agreements.offer_accepted,
+      pdpa_consent: _agreements.pdpa_consent,
     };
     if (email) body.customer_email = email;
 
