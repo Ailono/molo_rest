@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Категории — Molo Admin</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      .admin-container { max-width: 800px; margin: 0 auto; padding: 32px 16px 64px; }
+      .admin-header { margin-bottom: 24px; }
+      .admin-header h1 { margin: 8px 0 0; font-size: 28px; }
+      .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 700; text-decoration: none; margin-bottom: 12px; }
+      .back-link:hover { text-decoration: underline; }
+      .panel { background: rgba(255,255,255,.55); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+      .panel-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; margin: 0; }
+      .cat-list { display: flex; flex-direction: column; }
+      .cat-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid rgba(30,58,95,.08); font-size: 14px; font-weight: 700; }
+      .cat-item:last-child { border-bottom: 0; }
+      .cat-item-name { display: flex; align-items: center; gap: 8px; }
+      .cat-count { font-size: 11px; font-weight: 700; color: var(--muted); background: rgba(30,58,95,.08); padding: 2px 8px; border-radius: 999px; }
+      .btn-edit { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: transparent; color: var(--accent); border: 1.5px solid var(--border); font-size: 12px; font-weight: 700; cursor: pointer; }
+      .btn-danger { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: transparent; color: #b91c1c; border: 1.5px solid rgba(185,28,28,.25); font-size: 12px; font-weight: 700; cursor: pointer; }
+      .add-row { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); background: rgba(30,58,95,.03); }
+      .add-row input { flex: 1; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); font-size: 14px; }
+      .add-row input:focus { border-color: var(--accent); outline: none; }
+      .btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 999px; background: var(--accent); color: var(--bg); border: 1.5px solid var(--accent); font-size: 13px; font-weight: 700; cursor: pointer; }
+      .toast { position: fixed; bottom: 24px; right: 24px; padding: 13px 20px; border-radius: 12px; background: var(--accent); color: var(--bg); font-size: 13px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; transform: translateY(10px); transition: .2s ease; pointer-events: none; z-index: 999; }
+      .toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img id="site-logo" src="/images/лого.jpg" alt="Molo" />
+        </a>
+        <nav class="nav">
+          <a href="/admin">Админ</a>
+          <a href="#" onclick="sessionStorage.removeItem('admin-token'); window.location.href='/login.html'; return false;" style="color:#b91c1c;">Выйти</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="admin-container">
+        <div class="admin-header">
+          <a class="back-link" href="/admin">← Назад в админку</a>
+          <h1>Категории</h1>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Все категории</h2>
+          </div>
+          <div class="cat-list" id="cat-list">
+            <div class="empty-state" style="padding:32px;">Загрузка...</div>
+          </div>
+          <div class="add-row">
+            <input type="text" id="new-cat-name" placeholder="Название новой категории" />
+            <button class="btn-primary" onclick="addCategory()">Добавить</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      function getToken() {
+        const stored = sessionStorage.getItem('admin-token');
+        if (stored) return stored;
+        const meta = document.querySelector('meta[name="admin-token"]');
+        return meta ? meta.content : '';
+      }
+
+      if (!getToken()) {
+        window.location.href = '/login.html';
+      }
+
+      async function api(path, opts = {}) {
+        const res = await fetch(path, {
+          ...opts,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic ' + getToken(),
+            ...(opts.headers || {})
+          }
+        });
+        if (res.status === 204) return null;
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || 'HTTP ' + res.status);
+        return data;
+      }
+
+      let allCategories = [];
+      let allDishes = [];
+
+      async function loadData() {
+        try {
+          [allCategories, allDishes] = await Promise.all([
+            api('/api/categories'),
+            api('/api/menu')
+          ]);
+          render();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      function render() {
+        const list = document.getElementById('cat-list');
+        if (!allCategories.length) {
+          list.innerHTML = '<div class="empty-state" style="padding:32px;">Категорий пока нет</div>';
+          return;
+        }
+
+        list.innerHTML = allCategories.map(c => {
+          const count = allDishes.filter(d => d.category === c.name).length;
+          return '<div class="cat-item">' +
+            '<div class="cat-item-name"><span>' + c.name + '</span><span class="cat-count">' + count + ' блюд</span></div>' +
+            '<div>' +
+              '<button class="btn-edit" onclick="editCategory(' + c.id + ', \'' + c.name + '\')">Изменить</button>' +
+              '<button class="btn-danger" onclick="deleteCategory(' + c.id + ')" style="margin-left:6px;">Удалить</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      async function addCategory() {
+        const name = document.getElementById('new-cat-name').value.trim();
+        if (!name) return showToast('Введите название', true);
+
+        try {
+          await api('/api/categories', { method: 'POST', body: JSON.stringify({ name }) });
+          document.getElementById('new-cat-name').value = '';
+          showToast('Категория добавлена');
+          loadData();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      async function editCategory(id, oldName) {
+        const newName = prompt('Новое название:', oldName);
+        if (!newName || newName === oldName) return;
+
+        try {
+          await api('/api/categories/' + id, { method: 'PUT', body: JSON.stringify({ name: newName }) });
+          showToast('Категория обновлена');
+          loadData();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      async function deleteCategory(id) {
+        if (!confirm('Удалить категорию?')) return;
+
+        try {
+          await api('/api/categories/' + id, { method: 'DELETE' });
+          showToast('Категория удалена');
+          loadData();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      function showToast(msg, err) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast' + (err ? ' err' : '') + ' show';
+        setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      loadData();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Блюда — Molo Admin</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      .admin-container { max-width: 1200px; margin: 0 auto; padding: 32px 16px 64px; }
+      .admin-header { margin-bottom: 24px; }
+      .admin-header h1 { margin: 8px 0 0; font-size: 28px; }
+      .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 700; text-decoration: none; margin-bottom: 12px; }
+      .back-link:hover { text-decoration: underline; }
+      .panel { background: rgba(255,255,255,.55); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); gap: 12px; flex-wrap: wrap; }
+      .panel-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; margin: 0; }
+      .btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 999px; background: var(--accent); color: var(--bg); border: 1.5px solid var(--accent); font-size: 13px; font-weight: 700; cursor: pointer; }
+      .btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 999px; background: transparent; color: var(--accent); border: 1.5px solid var(--border); font-size: 13px; font-weight: 700; cursor: pointer; }
+      .btn-edit { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; background: transparent; color: var(--accent); border: 1.5px solid var(--border); font-size: 12px; font-weight: 700; cursor: pointer; }
+      .btn-danger { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; background: transparent; color: #b91c1c; border: 1.5px solid rgba(185,28,28,.25); font-size: 12px; font-weight: 700; cursor: pointer; }
+      select, input[type="search"] { padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); font-size: 13px; }
+      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .form-grid .full { grid-column: 1 / -1; }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+      .field input, .field select, .field textarea { padding: 11px 13px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); font-size: 14px; }
+      .field input:focus, .field select:focus { border-color: var(--accent); outline: none; }
+      .data-table { width: 100%; border-collapse: collapse; }
+      .data-table th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--border); background: rgba(30,58,95,.04); }
+      .data-table td { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid rgba(30,58,95,.08); vertical-align: middle; }
+      .data-table tr:last-child td { border-bottom: 0; }
+      .data-table tr:hover td { background: rgba(30,58,95,.03); }
+      .thumb { width: 48px; height: 36px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+      .cat-pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(30,58,95,.10); color: var(--accent); border: 1px solid rgba(30,58,95,.18); }
+      .price-cell { font-weight: 700; color: var(--accent); white-space: nowrap; }
+      .empty-state { padding: 32px 20px; text-align: center; color: var(--muted); }
+      .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:1000; opacity:0; visibility:hidden; transition:.2s ease; }
+      .modal-overlay.show { opacity:1; visibility:visible; }
+      .modal { background:#fff; border-radius:16px; max-width:600px; width:90%; max-height:85vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+      .modal-head { display:flex; align-items:center; justify-content:space-between; padding:18px 22px; border-bottom:1px solid var(--border); }
+      .modal-title { font-size:18px; font-weight:800; margin:0; }
+      .modal-close { background:none; border:none; font-size:24px; cursor:pointer; color:var(--muted); }
+      .modal-body { padding:22px; }
+      .modal-footer { display:flex; gap:10px; justify-content:flex-end; padding:18px 22px; border-top:1px solid var(--border); }
+      .toast { position: fixed; bottom: 24px; right: 24px; padding: 13px 20px; border-radius: 12px; background: var(--accent); color: var(--bg); font-size: 13px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; transform: translateY(10px); transition: .2s ease; pointer-events: none; z-index: 999; }
+      .toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img id="site-logo" src="/images/лого.jpg" alt="Molo" />
+        </a>
+        <nav class="nav">
+          <a href="/admin">Админ</a>
+          <a href="#" onclick="sessionStorage.removeItem('admin-token'); window.location.href='/login.html'; return false;" style="color:#b91c1c;">Выйти</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="admin-container">
+        <div class="admin-header">
+          <a class="back-link" href="/admin">← Назад в админку</a>
+          <h1>Блюда</h1>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Все блюда</h2>
+            <div class="btn-row">
+              <select id="filter-category">
+                <option value="">Все категории</option>
+              </select>
+              <input type="search" id="search-dish" placeholder="Поиск..." style="width: 180px;" />
+              <button class="btn-primary" onclick="openDishModal()">+ Добавить блюдо</button>
+            </div>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Изображение</th>
+                <th>Название</th>
+                <th>Категория</th>
+                <th>Цена</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody id="dishes-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- Dish Modal -->
+    <div class="modal-overlay" id="dish-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 class="modal-title" id="dish-modal-title">Добавить блюдо</h3>
+          <button class="modal-close" onclick="closeDishModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="field">
+              <label>Название</label>
+              <input type="text" id="dish-name" />
+            </div>
+            <div class="field">
+              <label>Категория</label>
+              <select id="dish-category"></select>
+            </div>
+            <div class="field">
+              <label>Цена (₽)</label>
+              <input type="number" id="dish-price" />
+            </div>
+            <div class="field">
+              <label>Изображение (URL)</label>
+              <input type="text" id="dish-image" placeholder="/images/..." />
+            </div>
+            <div class="field full">
+              <label>Описание</label>
+              <textarea id="dish-desc" rows="3"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-ghost" onclick="closeDishModal()">Отмена</button>
+          <button class="btn-primary" onclick="saveDish()">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      function getToken() {
+        const stored = sessionStorage.getItem('admin-token');
+        if (stored) return stored;
+        const meta = document.querySelector('meta[name="admin-token"]');
+        return meta ? meta.content : '';
+      }
+
+      if (!getToken()) {
+        window.location.href = '/login.html';
+      }
+
+      async function api(path, opts = {}) {
+        const res = await fetch(path, {
+          ...opts,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic ' + getToken(),
+            ...(opts.headers || {})
+          }
+        });
+        if (res.status === 204) return null;
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || 'HTTP ' + res.status);
+        return data;
+      }
+
+      let allCategories = [];
+      let allDishes = [];
+      let editingDishId = null;
+
+      async function loadData() {
+        try {
+          [allCategories, allDishes] = await Promise.all([
+            api('/api/categories'),
+            api('/api/menu')
+          ]);
+          populateCategorySelects();
+          renderDishes();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      function populateCategorySelects() {
+        const options = '<option value="">Выберите категорию</option>' + 
+          allCategories.map(c => '<option value="' + c.name + '">' + c.name + '</option>').join('');
+        document.getElementById('filter-category').innerHTML = options;
+        document.getElementById('dish-category').innerHTML = options;
+      }
+
+      function renderDishes() {
+        const catFilter = document.getElementById('filter-category').value;
+        const search = document.getElementById('search-dish').value.toLowerCase();
+
+        let filtered = allDishes.filter(d => {
+          if (catFilter && d.category !== catFilter) return false;
+          if (search && !(d.name || '').toLowerCase().includes(search)) return false;
+          return true;
+        });
+
+        const tbody = document.getElementById('dishes-tbody');
+        if (!filtered.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted);">Блюд не найдено</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = filtered.map(d => {
+          const img = d.image ? '<img class="thumb" src="' + d.image + '" />' : '<div class="thumb" style="background:var(--sand);display:flex;align-items:center;justify-content:center;">🥗</div>';
+          return '<tr>' +
+            '<td>' + img + '</td>' +
+            '<td><b>' + (d.name || '-') + '</b><br><small style="color:var(--muted)">' + (d.description || '').substring(0, 50) + '</small></td>' +
+            '<td><span class="cat-pill">' + (d.category || '-') + '</span></td>' +
+            '<td class="price-cell">' + (d.price || 0) + ' ₽</td>' +
+            '<td>' +
+              '<button class="btn-edit" onclick="editDish(' + d.id + ')">Изменить</button>' +
+              '<button class="btn-danger" onclick="deleteDish(' + d.id + ')" style="margin-left:6px;">Удалить</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+      }
+
+      function openDishModal() {
+        editingDishId = null;
+        document.getElementById('dish-modal-title').textContent = 'Добавить блюдо';
+        document.getElementById('dish-name').value = '';
+        document.getElementById('dish-category').value = '';
+        document.getElementById('dish-price').value = '';
+        document.getElementById('dish-image').value = '';
+        document.getElementById('dish-desc').value = '';
+        document.getElementById('dish-modal').classList.add('show');
+      }
+
+      function editDish(id) {
+        const dish = allDishes.find(d => d.id === id);
+        if (!dish) return;
+
+        editingDishId = id;
+        document.getElementById('dish-modal-title').textContent = 'Изменить блюдо';
+        document.getElementById('dish-name').value = dish.name || '';
+        document.getElementById('dish-category').value = dish.category || '';
+        document.getElementById('dish-price').value = dish.price || '';
+        document.getElementById('dish-image').value = dish.image || '';
+        document.getElementById('dish-desc').value = dish.description || '';
+        document.getElementById('dish-modal').classList.add('show');
+      }
+
+      function closeDishModal() {
+        document.getElementById('dish-modal').classList.remove('show');
+      }
+
+      async function saveDish() {
+        const name = document.getElementById('dish-name').value.trim();
+        const category = document.getElementById('dish-category').value;
+        const price = parseFloat(document.getElementById('dish-price').value);
+        const image = document.getElementById('dish-image').value.trim();
+        const description = document.getElementById('dish-desc').value.trim();
+
+        if (!name || !category || isNaN(price)) {
+          showToast('Заполните название, категорию и цену', true);
+          return;
+        }
+
+        const body = { name, category, price, image, description };
+
+        try {
+          if (editingDishId) {
+            await api('/api/menu/' + editingDishId, { method: 'PUT', body: JSON.stringify(body) });
+            showToast('Блюдо обновлено');
+          } else {
+            await api('/api/menu', { method: 'POST', body: JSON.stringify(body) });
+            showToast('Блюдо добавлено');
+          }
+          closeDishModal();
+          loadData();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      async function deleteDish(id) {
+        if (!confirm('Удалить блюдо?')) return;
+
+        try {
+          await api('/api/menu/' + id, { method: 'DELETE' });
+          showToast('Блюдо удалено');
+          loadData();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      function showToast(msg, err) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast' + (err ? ' err' : '') + ' show';
+        setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      document.getElementById('filter-category').addEventListener('change', renderDishes);
+      document.getElementById('search-dish').addEventListener('input', renderDishes);
+
+      loadData();
+    </script>
+  </body>
+</html>

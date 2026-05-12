@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Платежи — Molo Admin</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      .admin-container { max-width: 1400px; margin: 0 auto; padding: 32px 16px 64px; }
+      .admin-header { margin-bottom: 24px; }
+      .admin-header h1 { margin: 8px 0 0; font-size: 28px; }
+      .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 700; text-decoration: none; margin-bottom: 12px; }
+      .back-link:hover { text-decoration: underline; }
+      .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+      .stat-card { padding: 18px 20px; background: rgba(255,255,255,.55); border: 1px solid var(--border); border-radius: var(--radius); }
+      .stat-num { font-size: 28px; font-weight: 800; color: var(--accent); line-height: 1; }
+      .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+      .panel { background: rgba(255,255,255,.55); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); gap: 12px; flex-wrap: wrap; }
+      .panel-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; margin: 0; }
+      .btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 999px; background: var(--accent); color: var(--bg); border: 1.5px solid var(--accent); font-size: 13px; font-weight: 700; cursor: pointer; }
+      .btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 999px; background: transparent; color: var(--accent); border: 1.5px solid var(--border); font-size: 13px; font-weight: 700; cursor: pointer; }
+      input[type="date"] { padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg); font-size: 13px; }
+      .data-table { width: 100%; border-collapse: collapse; }
+      .data-table th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--border); background: rgba(30,58,95,.04); }
+      .data-table td { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid rgba(30,58,95,.08); }
+      .data-table tr:last-child td { border-bottom: 0; }
+      .status-pill { display:inline-flex; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+      .status-paid { background:#d1fae5; color:#065f46; }
+      .status-pending { background:#fef3c7; color:#92400e; }
+      .status-failed { background:#fee2e2; color:#991b1b; }
+      .status-refunded { background:#f3f4f6; color:#6b7280; }
+      .empty-state { padding: 48px 20px; text-align: center; color: var(--muted); }
+      .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+      .toast { position: fixed; bottom: 24px; right: 24px; padding: 13px 20px; border-radius: 12px; background: var(--accent); color: var(--bg); font-size: 13px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; transform: translateY(10px); transition: .2s ease; pointer-events: none; z-index: 999; }
+      .toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="/">
+          <img id="site-logo" src="/images/лого.jpg" alt="Molo" />
+        </a>
+        <nav class="nav">
+          <a href="/admin">Админ</a>
+          <a href="#" onclick="sessionStorage.removeItem('admin-token'); window.location.href='/login.html'; return false;" style="color:#b91c1c;">Выйти</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="admin-container">
+        <div class="admin-header">
+          <a class="back-link" href="/admin">← Назад в админку</a>
+          <h1>Платежи</h1>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-num" id="stat-total">—</div>
+            <div class="stat-label">Всего операций</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-amount">—</div>
+            <div class="stat-label">Сумма</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-net">—</div>
+            <div class="stat-label">Чистая сумма</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Реестр платежей</h2>
+            <div class="btn-row">
+              <input type="date" id="date-from" />
+              <span style="color:var(--muted);">—</span>
+              <input type="date" id="date-to" />
+              <button class="btn-primary" onclick="loadRegistry()">Загрузить</button>
+              <button class="btn-ghost" onclick="exportCSV()">CSV</button>
+              <button class="btn-ghost" onclick="exportExcel()">Excel</button>
+            </div>
+          </div>
+          <div id="table-wrap">
+            <div class="empty-state"><div class="icon">💳</div>Выберите период и нажмите "Загрузить"</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      function getToken() {
+        const stored = sessionStorage.getItem('admin-token');
+        if (stored) return stored;
+        const meta = document.querySelector('meta[name="admin-token"]');
+        return meta ? meta.content : '';
+      }
+
+      if (!getToken()) {
+        window.location.href = '/login.html';
+      }
+
+      async function api(path, opts = {}) {
+        const res = await fetch(path, {
+          ...opts,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic ' + getToken(),
+            ...(opts.headers || {})
+          }
+        });
+        if (res.status === 204) return null;
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || 'HTTP ' + res.status);
+        return data;
+      }
+
+      // Set default dates
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      document.getElementById('date-from').value = firstDay.toISOString().split('T')[0];
+      document.getElementById('date-to').value = now.toISOString().split('T')[0];
+
+      let registryData = [];
+      let totals = { total: 0, refunds: 0, net: 0 };
+
+      async function loadRegistry() {
+        const dateFrom = document.getElementById('date-from').value;
+        const dateTo = document.getElementById('date-to').value;
+
+        try {
+          const data = await api('/api/payment/registry?dateFrom=' + dateFrom + '&dateTo=' + dateTo);
+          registryData = data?.registry || [];
+          totals = data?.totals || { total: 0, refunds: 0, net: 0 };
+
+          renderRegistry();
+          updateStats();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+      }
+
+      function renderRegistry() {
+        const wrap = document.getElementById('table-wrap');
+
+        if (!registryData.length) {
+          wrap.innerHTML = '<div class="empty-state"><div class="icon">💳</div>Нет данных за выбранный период</div>';
+          return;
+        }
+
+        const rows = registryData.map(p => {
+          const statusClass = 'status-' + (p.status === 'paid' ? 'paid' : p.status === 'failed' ? 'failed' : p.status === 'refunded' ? 'refunded' : 'pending');
+          const statusText = { paid: 'Оплачен', failed: 'Ошибка', refunded: 'Возврат', pending: 'Ожидает' }[p.status] || p.status;
+
+          return '<tr>' +
+            '<td>' + (p.orderId || '-') + '</td>' +
+            '<td>' + new Date(p.date).toLocaleString('ru') + '</td>' +
+            '<td>' + (p.amount / 100).toFixed(2) + ' ₽</td>' +
+            '<td><span class="status-pill ' + statusClass + '">' + statusText + '</span></td>' +
+            '<td>' + (p.paymentMethod || '-') + '</td>' +
+          '</tr>';
+        }).join('');
+
+        wrap.innerHTML = '<table class="data-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Сумма</th><th>Статус</th><th>Метод</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      }
+
+      function updateStats() {
+        document.getElementById('stat-total').textContent = registryData.length;
+        document.getElementById('stat-amount').textContent = (totals.total / 100).toFixed(0) + ' ₽';
+        document.getElementById('stat-net').textContent = (totals.net / 100).toFixed(0) + ' ₽';
+      }
+
+      function showToast(msg, err) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast' + (err ? ' err' : '') + ' show';
+        setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      function exportCSV() {
+        if (!registryData.length) return showToast('Нет данных для экспорта', true);
+        let csv = 'Заказ,Дата,Сумма,Статус,Метод\n';
+        registryData.forEach(p => {
+          csv += (p.orderId || '') + ',';
+          csv += '"' + new Date(p.date).toLocaleString('ru') + '",';
+          csv += (p.amount / 100).toFixed(2) + ',';
+          csv += (p.status || '') + ',';
+          csv += (p.paymentMethod || '') + '\n';
+        });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'payments.csv';
+        link.click();
+      }
+
+      function exportExcel() {
+        if (!registryData.length) return showToast('Нет данных для экспорта', true);
+        showToast('Экспорт в Excel скоро будет доступен');
+      }
+
+      loadRegistry();
+    </script>
+  </body>
+</html>
