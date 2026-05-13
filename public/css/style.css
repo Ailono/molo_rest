@@ -642,7 +642,7 @@ tr:last-child td{ border-bottom: 0; }
 /* CTA Banner */
 .cta-banner {
   padding: 56px 0;
-  background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
+  background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%) !important;
   color: #fff;
   text-align: center;
   position: relative;
