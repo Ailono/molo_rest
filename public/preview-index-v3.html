@@ -205,17 +205,24 @@
 
       /* CTA Banner */
       .cta-banner {
-        padding: 56px 32px;
-        background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
-        color: #fff;
-        text-align: center;
-        position: relative;
-        overflow: hidden;
-        border-radius: var(--radius);
-        box-sizing: border-box;
+        padding: 52px 0 0;
+        background: transparent;
         width: 100%;
-        display: flex;
-        justify-content: center;
+      }
+
+      .cta-banner .hero-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0;
+        align-items: stretch;
+        background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        min-height: 280px;
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: var(--radius);
       }
 
       .cta-banner::before {
@@ -235,6 +242,7 @@
         flex-direction: column;
         align-items: center;
         gap: 12px;
+        padding: 36px 32px;
       }
 
       .cta-banner h2 {
@@ -321,11 +329,13 @@
       <!-- CTA Banner -->
       <section class="cta-banner">
         <div class="container">
-          <div class="cta-banner-content">
-            <h2>Забронировать столик</h2>
-            <p>Отметьте особый момент в уютной атмосфере Molo. Бронирование бесплатно!</p>
-            <div class="cta-buttons">
-              <a class="btn-primary-large" href="/delivery.html">Забронировать стол →</a>
+          <div class="hero-grid">
+            <div class="cta-banner-content">
+              <h2>Забронировать столик</h2>
+              <p>Отметьте особый момент в уютной атмосфере Molo. Бронирование бесплатно!</p>
+              <div class="cta-buttons">
+                <a class="btn-primary-large" href="/delivery.html">Забронировать стол →</a>
+              </div>
             </div>
           </div>
         </div>
