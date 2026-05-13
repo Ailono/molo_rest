@@ -641,12 +641,23 @@ tr:last-child td{ border-bottom: 0; }
 
 /* CTA Banner */
 .cta-banner {
-  padding: 56px 0;
-  background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%) !important;
-  color: #fff;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
+  padding: 52px 0 0;
+  background: transparent;
+}
+
+.cta-banner .hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  align-items: stretch;
+  background: linear-gradient(135deg, var(--mocha) 0%, var(--mocha-dark) 100%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  min-height: 280px;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: var(--radius);
 }
 
 .cta-banner::before {
@@ -662,6 +673,11 @@ tr:last-child td{ border-bottom: 0; }
 .cta-banner-content {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 36px 32px;
 }
 
 .cta-banner h2 {
