@@ -1,6 +1,11 @@
 :root{
   --bg: #F5F0E6;
   --ink: #4E3B31;
+  --mocha: #4E3B31;
+  --mocha-light: #6B554A;
+  --mocha-dark: #3D2E24;
+  --olive: #7A8B5C;
+  --terracotta: #C4785A;
   --muted: #6b7a8d;
   --accent: #4E3B31;
   --accent-2: #3D2E24;
@@ -643,6 +648,7 @@ tr:last-child td{ border-bottom: 0; }
 .cta-banner {
   padding: 52px 0 0;
   background: transparent;
+  position: relative;
 }
 
 .cta-banner .hero-grid {
