@@ -1207,6 +1207,21 @@ class TochkaPaymentService {
               [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
             );
             console.log('[PaymentService] Fiscal receipt sent:', fiscalResult.receiptId);
+            
+            // Send receipt email to customer if email provided
+            if (order.customer_email) {
+              try {
+                await NotificationService.sendCustomerReceipt({
+                  orderId: order.id,
+                  email: order.customer_email,
+                  receiptUrl: fiscalResult.receiptUrl,
+                  order: order
+                });
+                console.log('[PaymentService] Receipt email sent to:', order.customer_email);
+              } catch (emailError) {
+                console.error('[PaymentService] Failed to send receipt email:', emailError.message);
+              }
+            }
           }
         } catch (fiscalError) {
           console.error('[PaymentService] Fiscal receipt error:', fiscalError.message);
@@ -1272,15 +1287,47 @@ function createPaymentService() {
   return PaymentService;
 }
 
-// ── Fiscal configuration ─────────────────────────────────────────────────
+// ── Fiscal configuration (54-ФЗ) ─────────────────────────────────────────
+// Supported providers: cloudkassir, moysklad, evotor
+const FISCAL_PROVIDER_DEFAULTS = {
+  cloudkassir: {
+    name: 'CloudKassir',
+    apiUrl: 'https://api.cloudkassir.ru'
+  },
+  moysklad: {
+    name: 'МойСклад',
+    apiUrl: 'https://online.moysklad.ru/api/remap/1.2'
+  },
+  evotor: {
+    name: 'Эвотор',
+    apiUrl: 'https://evotor.ru/api/v1'
+  }
+};
+
 const FISCAL_CONFIG = {
+  // Provider settings
+  provider: process.env.FISCAL_PROVIDER || 'cloudkassir',
+  
+  // Organization details (required)
   inn: process.env.FISCAL_INN || '',
   name: process.env.FISCAL_NAME || 'ООО "Ресторан"',
   address: process.env.FISCAL_ADDRESS || '',
-  apiUrl: process.env.FISCAL_API_URL || '',
+  
+  // API credentials
+  apiUrl: process.env.FISCAL_API_URL || '',  // Falls back to provider default
   apiKey: process.env.FISCAL_API_KEY || '',
-  callbackUrl: process.env.FISCAL_CALLBACK_URL || ''
+  
+  // Callbacks
+  callbackUrl: process.env.FISCAL_CALLBACK_URL || '',
+  
+  // Optional
+  companyEmail: process.env.FISCAL_COMPANY_EMAIL || ''
 };
+
+// Resolve API URL from provider defaults if not explicitly set
+if (!FISCAL_CONFIG.apiUrl && FISCAL_PROVIDER_DEFAULTS[FISCAL_CONFIG.provider]) {
+  FISCAL_CONFIG.apiUrl = FISCAL_PROVIDER_DEFAULTS[FISCAL_CONFIG.provider].apiUrl;
+}
 
 // ── FiscalService (cloud online cash register integration) ───────────────
 const FiscalService = {
@@ -1322,14 +1369,16 @@ const FiscalService = {
    * Send receipt for refund (54-ФЗ)
    * @param {object} order - Order object
    * @param {number} refundAmount - Refund amount
+   * @param {Array} [refundItems] - Optional array of items being refunded (for partial refunds)
    * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string }}
    */
-  async sendRefundReceipt(order, refundAmount) {
+  async sendRefundReceipt(order, refundAmount, refundItems = null) {
     try {
-      const receiptData = this._buildReceiptData(order, 'refund', refundAmount);
+      const receiptData = this._buildReceiptData(order, 'refund', refundAmount, refundItems);
       
       console.log('[FiscalService] Sending refund receipt for order:', order.id);
       console.log('[FiscalService] Refund amount:', refundAmount);
+      console.log('[FiscalService] Original receipt:', order.receipt_id);
       
       // In production, make actual API call
       if (FISCAL_CONFIG.apiUrl && FISCAL_CONFIG.apiKey) {
@@ -1376,66 +1425,161 @@ const FiscalService = {
   },
   
   /**
+   * Resend receipt for an order (manual retry)
+   * @param {number} orderId - Order ID
+   * @returns {Promise<{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string }>}
+   */
+  async resendReceipt(orderId) {
+    try {
+      console.log('[FiscalService] Resending receipt for order:', orderId);
+      
+      // Get order from database
+      const { rows } = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+      
+      if (rows.length === 0) {
+        return { success: false, error: 'Заказ не найден' };
+      }
+      
+      const order = rows[0];
+      
+      // Check if order is paid
+      if (order.payment_status !== 'paid' && order.payment_status !== 'captured') {
+        return { success: false, error: 'Заказ не оплачен' };
+      }
+      
+      // Send receipt
+      const result = await this.sendReceipt(order);
+      
+      if (result.success) {
+        // Update order with receipt data
+        await pool.query(
+          'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3, fiscal_error = NULL WHERE id = $4',
+          [result.receiptId, result.receiptUrl, 'sent', orderId]
+        );
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('[FiscalService] Error resending receipt:', error.message);
+      return { success: false, error: error.message };
+    }
+  },
+  
+  /**
    * Build receipt data according to 54-ФЗ
    * @param {object} order - Order object
    * @param {string} type - 'sale' or 'refund'
    * @param {number} [refundAmount] - Optional refund amount
+   * @param {Array} [refundItems] - Optional array of items being refunded (for partial refunds)
    * @returns {object} Receipt data
    */
-  _buildReceiptData(order, type = 'sale', refundAmount) {
-    const items = (order.items || []).map(item => {
+  _buildReceiptData(order, type = 'sale', refundAmount, refundItems = null) {
+    // Determine which items to include
+    // For partial refunds, use only the specified refund items
+    // For full refunds or sales, use all order items
+    const sourceItems = (type === 'refund' && refundItems) ? refundItems : (order.items || []);
+    
+    // Build items array with all required fields per 54-ФЗ
+    // Prices are in kopecks (копейки) as required by 54-ФЗ
+    const items = sourceItems.map(item => {
       const quantity = item.quantity || 1;
-      const price = parseFloat(item.price || 0);
-      const total = price * quantity;
+      // Convert price to kopecks (multiply by 100)
+      const priceInKopecks = Math.round(parseFloat(item.price || 0) * 100);
+      const totalInKopecks = priceInKopecks * quantity;
       
       return {
         name: item.name || 'Товар',
         quantity: quantity,
-        price: price,
-        total: Math.round(total * 100) / 100,
-        vat: item.vat || 'vat20',
+        price: priceInKopecks,           // Цена в копейках за единицу
+        total: totalInKopecks,           // Сумма (price * quantity) в копейках
+        vat: item.vat || 'vat20',        // Ставка НДС: 'none' | 'vat10' | 'vat20'
         paymentMethod: 'full_prepayment',
         paymentObject: 'commodity'
       };
     });
     
-    // Calculate totals
-    const total = items.reduce((sum, item) => sum + item.total, 0);
-    const finalTotal = refundAmount !== undefined 
-      ? Math.round(refundAmount * 100) / 100 
-      : total;
+    // Calculate totals in kopecks
+    const subtotalInKopecks = items.reduce((sum, item) => sum + item.total, 0);
+    
+    // Handle discount (from order.discount if available)
+    const discountInKopecks = order.discount 
+      ? Math.round(parseFloat(order.discount) * 100) 
+      : 0;
+    
+    // Calculate final total
+    let totalInKopecks;
+    if (refundAmount !== undefined) {
+      // For refunds, use the refund amount
+      totalInKopecks = Math.round(parseFloat(refundAmount) * 100);
+    } else {
+      // For sales, total = subtotal - discount
+      // Ensure total is never negative (discount cannot exceed subtotal)
+      totalInKopecks = Math.max(0, subtotalInKopecks - discountInKopecks);
+    }
     
     // Build receipt object according to 54-ФЗ format
-    return {
+    const receiptData = {
+      // Продавец (Seller)
       seller: {
         inn: FISCAL_CONFIG.inn,
         name: FISCAL_CONFIG.name,
         address: FISCAL_CONFIG.address
       },
+      
+      // Чек (Receipt)
       receipt: {
-        type: type,
+        // Позиции (Items)
         items: items,
-        total: Math.round(finalTotal * 100) / 100,
-        payments: {
-          cash: 0,
-          electronic: Math.round(finalTotal * 100) / 100
+        
+        // Итого (Totals)
+        totals: {
+          discount: discountInKopecks,   // Скидка в копейках
+          total: totalInKopecks          // Итого к оплате в копейках
         },
+        
+        // Оплата (Payments)
+        payments: [
+          {
+            type: 'online',              // Тип оплаты (онлайн)
+            amount: totalInKopecks       // Сумма оплаты в копейках
+          }
+        ],
+        
+        // Компания (Company)
+        company: {
+          inn: FISCAL_CONFIG.inn,
+          email: order.customer_email || FISCAL_CONFIG.companyEmail || 'client@example.com'
+        },
+        
+        // Клиент (Client) - optional
         client: order.customer_email ? {
           email: order.customer_email
         } : order.customer_phone ? {
           phone: order.customer_phone
-        } : undefined,
-        company: {
-          inn: FISCAL_CONFIG.inn,
-          email: process.env.FISCAL_COMPANY_EMAIL || 'company@example.com'
-        }
+        } : undefined
       },
+      
+      // Тип операции (Operation type)
+      type: type,  // 'sale' или 'refund'
+      
+      // Дата и время (Timestamp)
       timestamp: new Date().toISOString(),
+      
+      // Идентификатор (External ID)
       external_id: `order_${order.id}`,
+      
+      // Служебное (Service)
       service: {
         callback_url: FISCAL_CONFIG.callbackUrl || `https://${process.env.HOST || 'localhost'}/api/fiscal/callback`
       }
     };
+    
+    // Для чеков возврата добавляем ссылку на исходный чек (54-ФЗ)
+    if (type === 'refund' && order.receipt_id) {
+      receiptData.original_receipt_id = order.receipt_id;
+    }
+    
+    return receiptData;
   },
   
   /**
@@ -1498,6 +1642,90 @@ const FiscalService = {
     }
     
     return await response.json();
+  },
+  
+  /**
+   * Handle callback from cloud cash register (ПКФ)
+   * Validates: Requirements 19.8
+   * @param {object} payload - Callback payload from fiscal provider
+   * @param {string} payload.receipt_id - Receipt ID from provider
+   * @param {string} payload.external_id - External ID (format: order_123)
+   * @param {string} payload.status - Receipt status (completed, error, etc.)
+   * @param {string} [payload.error] - Error message if status is error
+   * @returns {Promise<{ success: boolean, orderId?: number, error?: string }>}
+   */
+  async handleCallback(payload) {
+    const { receipt_id, external_id, status, error } = payload;
+    
+    console.log('[FiscalService] Received callback:', JSON.stringify(payload));
+    
+    if (!external_id) {
+      console.error('[FiscalService] Callback missing external_id');
+      return { success: false, error: 'external_id required' };
+    }
+    
+    try {
+      // Extract order ID from external_id (format: order_123)
+      const orderId = parseInt(external_id.replace('order_', ''), 10);
+      
+      if (isNaN(orderId)) {
+        console.error('[FiscalService] Invalid external_id format:', external_id);
+        return { success: false, error: 'Invalid external_id format' };
+      }
+      
+      // Build update query dynamically based on provided fields
+      const updates = [];
+      const values = [];
+      let paramIndex = 1;
+      
+      if (status) {
+        updates.push(`fiscal_status = $${paramIndex++}`);
+        // Normalize status values
+        const normalizedStatus = status === 'completed' ? 'completed' : 
+                                  status === 'error' ? 'error' :
+                                  status === 'pending' ? 'pending' : 'sent';
+        values.push(normalizedStatus);
+      }
+      
+      if (error) {
+        updates.push(`fiscal_error = $${paramIndex++}`);
+        values.push(error);
+      }
+      
+      if (receipt_id) {
+        updates.push(`receipt_id = $${paramIndex++}`);
+        values.push(receipt_id);
+      }
+      
+      if (updates.length === 0) {
+        console.log('[FiscalService] No fields to update for order:', orderId);
+        return { success: true, orderId };
+      }
+      
+      // Add orderId as the last parameter
+      values.push(orderId);
+      
+      // Execute update
+      await pool.query(
+        `UPDATE orders SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+        values
+      );
+      
+      // Log success with details
+      if (status === 'completed') {
+        console.log(`[FiscalService] ✓ Callback SUCCESS: Order ${orderId} fiscal_status=completed, receipt_id=${receipt_id || 'N/A'}`);
+      } else if (status === 'error') {
+        console.error(`[FiscalService] ✗ Callback ERROR: Order ${orderId} fiscal_status=error, error=${error}`);
+      } else {
+        console.log(`[FiscalService] → Callback UPDATE: Order ${orderId} fiscal_status=${status}`);
+      }
+      
+      return { success: true, orderId };
+    } catch (err) {
+      console.error('[FiscalService] ✗ Callback FAILED:', err.message);
+      console.error('[FiscalService] Callback payload was:', JSON.stringify(payload));
+      return { success: false, error: err.message };
+    }
   }
 };
 
@@ -1807,6 +2035,97 @@ ${statusEmoji[oldStatus] || '❓'} ${statusText[oldStatus] || oldStatus} → ${s
     } catch (error) {
       console.error('[NotificationService] Customer email error:', error.message);
       throw error;
+    }
+  },
+  
+  /**
+   * Send receipt email to customer
+   * @param {object} params - Parameters object
+   * @param {number} params.orderId - Order ID
+   * @param {string} params.email - Customer email
+   * @param {string} params.receiptUrl - URL to view/download receipt
+   * @param {object} [params.order] - Optional full order object for additional details
+   */
+  async sendCustomerReceipt({ orderId, email: customerEmail, receiptUrl, order }) {
+    const { email } = NOTIFICATION_CONFIG;
+    
+    if (!email.enabled || !email.smtpHost) {
+      console.log('[NotificationService] Email disabled, skipping customer receipt');
+      return { success: false, error: 'Email not configured' };
+    }
+    
+    if (!customerEmail) {
+      console.log('[NotificationService] No customer email provided, skipping receipt email');
+      return { success: false, error: 'No customer email' };
+    }
+    
+    const orderNumber = order?.order_number || `#${orderId}`;
+    const customerName = order?.customer_name || 'Клиент';
+    
+    const subject = `Чек для заказа ${orderNumber}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2d3748;">Здравствуйте, ${customerName}!</h2>
+        <p>Благодарим за ваш заказ! Ваш фискальный чек готов.</p>
+        
+        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <h3 style="margin-top: 0; color: #2d3748;">Информация о чеке</h3>
+          <p><b>Номер заказа:</b> ${orderNumber}</p>
+          <p><b>Дата:</b> ${new Date().toLocaleDateString('ru-RU', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</p>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${receiptUrl}" 
+             style="background: #4299e1; color: white; padding: 12px 24px; 
+                    text-decoration: none; border-radius: 6px; display: inline-block;">
+            Открыть чек
+          </a>
+        </div>
+        
+        <p style="color: #718096; font-size: 14px;">
+          Чек соответствует требованиям 54-ФЗ и хранится в фискальном накопителе.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+        
+        <p style="color: #718096; font-size: 12px;">
+          С уважением,<br>
+          Моло Бистро
+        </p>
+      </div>
+    `;
+    
+    try {
+      const nodemailer = require('nodemailer');
+      
+      const transporter = nodemailer.createTransport({
+        host: email.smtpHost,
+        port: parseInt(email.smtpPort) || 587,
+        secure: email.smtpPort === '465',
+        auth: {
+          user: email.smtpUser,
+          pass: email.smtpPass
+        }
+      });
+      
+      await transporter.sendMail({
+        from: email.from || email.smtpUser,
+        to: customerEmail,
+        subject: subject,
+        html: html
+      });
+      
+      console.log('[NotificationService] Customer receipt sent to:', customerEmail);
+      return { success: true };
+    } catch (error) {
+      console.error('[NotificationService] Customer receipt email error:', error.message);
+      return { success: false, error: error.message };
     }
   }
 };
@@ -2320,6 +2639,21 @@ app.post('/api/payment/webhook', async (req, res) => {
               [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
             );
             console.log('[PaymentWebhook] Fiscal receipt sent successfully:', fiscalResult.receiptId);
+            
+            // Send receipt email to customer if email provided
+            if (order.customer_email) {
+              try {
+                await NotificationService.sendCustomerReceipt({
+                  orderId: order.id,
+                  email: order.customer_email,
+                  receiptUrl: fiscalResult.receiptUrl,
+                  order: order
+                });
+                console.log('[PaymentWebhook] Receipt email sent to:', order.customer_email);
+              } catch (emailError) {
+                console.error('[PaymentWebhook] Failed to send receipt email:', emailError.message);
+              }
+            }
           } else {
             await pool.query(
               'UPDATE orders SET fiscal_status = $2, fiscal_error = $3 WHERE id = $4',
@@ -2373,57 +2707,97 @@ app.post('/api/upload', adminAuth, (req, res) => {
 /**
  * Webhook for receiving fiscal receipt status from cloud cash register
  * POST /api/fiscal/callback
+ * Validates: Requirements 19.8
  */
 app.post('/api/fiscal/callback', async (req, res) => {
-  const { receipt_id, external_id, status, error } = req.body;
+  const result = await FiscalService.handleCallback(req.body);
   
-  console.log('[FiscalCallback] Received callback:', req.body);
-  
-  if (!external_id) {
-    return res.status(400).json({ error: 'external_id required' });
+  if (!result.success) {
+    // Return 400 for validation errors, 500 for server errors
+    const statusCode = result.error?.includes('external_id') ? 400 : 500;
+    return res.status(statusCode).json({ error: result.error });
   }
   
+  res.json({ ok: true, orderId: result.orderId });
+});
+
+
+/**
+ * Manually send/retry fiscal receipt for an order
+ * POST /api/fiscal/send/:orderId
+ * 
+ * Validates: Requirements 19.6
+ */
+app.post('/api/fiscal/send/:orderId', adminAuth, async (req, res) => {
+  const { orderId } = req.params;
+  
   try {
-    // Extract order ID from external_id (format: order_123)
-    const orderId = parseInt(external_id.replace('order_', ''), 10);
+    console.log('[FiscalSend] Manual receipt send for order:', orderId);
     
-    if (isNaN(orderId)) {
-      console.error('[FiscalCallback] Invalid external_id:', external_id);
-      return res.status(400).json({ error: 'Invalid external_id' });
+    const result = await FiscalService.resendReceipt(parseInt(orderId, 10));
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        receiptId: result.receiptId,
+        receiptUrl: result.receiptUrl
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error
+      });
     }
-    
-    // Update order with fiscal status
-    const updates = [];
-    const values = [];
-    let paramIndex = 1;
-    
-    if (status) {
-      updates.push(`fiscal_status = $${paramIndex++}`);
-      values.push(status === 'completed' ? 'completed' : status);
-    }
-    
-    if (error) {
-      updates.push(`fiscal_error = $${paramIndex++}`);
-      values.push(error);
-    }
-    
-    if (receipt_id) {
-      updates.push(`receipt_id = $${paramIndex++}`);
-      values.push(receipt_id);
-    }
-    
-    if (updates.length > 0) {
-      values.push(orderId);
-      await pool.query(
-        `UPDATE orders SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
-        values
-      );
-      console.log('[FiscalCallback] Updated order:', orderId, 'status:', status);
-    }
-    
-    res.json({ ok: true });
   } catch (error) {
-    console.error('[FiscalCallback] Error processing callback:', error);
+    console.error('[FiscalSend] Error:', error);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+/**
+ * Get fiscal receipt status for an order
+ * GET /api/fiscal/status/:orderId
+ * 
+ * Validates: Requirements 19.5, 19.8
+ */
+app.get('/api/fiscal/status/:orderId', adminAuth, async (req, res) => {
+  const { orderId } = req.params;
+  
+  try {
+    // Get order from database
+    const { rows } = await pool.query(
+      'SELECT id, receipt_id, receipt_url, fiscal_status, fiscal_error, payment_status FROM orders WHERE id = $1',
+      [orderId]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Заказ не найден' });
+    }
+    
+    const order = rows[0];
+    
+    // If no receipt has been sent
+    if (!order.receipt_id) {
+      return res.json({
+        orderId: order.id,
+        status: 'not_sent',
+        paymentStatus: order.payment_status
+      });
+    }
+    
+    // Check current status from fiscal service
+    const statusResult = await FiscalService.getReceiptStatus(order.receipt_id);
+    
+    res.json({
+      orderId: order.id,
+      receiptId: order.receipt_id,
+      receiptUrl: order.receipt_url,
+      status: statusResult.status || order.fiscal_status,
+      fiscalError: order.fiscal_error,
+      paymentStatus: order.payment_status
+    });
+  } catch (error) {
+    console.error('[FiscalStatus] Error:', error);
     res.status(500).json({ error: 'Internal error' });
   }
 });
@@ -2462,6 +2836,21 @@ app.put('/api/orders/:id/receipt', async (req, res) => {
         order.receipt_id = fiscalResult.receiptId;
         order.receipt_url = fiscalResult.receiptUrl;
         order.fiscal_status = 'sent';
+        
+        // Send receipt email to customer if email provided
+        if (order.customer_email) {
+          try {
+            await NotificationService.sendCustomerReceipt({
+              orderId: order.id,
+              email: order.customer_email,
+              receiptUrl: fiscalResult.receiptUrl,
+              order: order
+            });
+            console.log('[Receipt] Receipt email sent to:', order.customer_email);
+          } catch (emailError) {
+            console.error('[Receipt] Failed to send receipt email:', emailError.message);
+          }
+        }
       }
     }
     
