@@ -50,6 +50,33 @@
       .order-item { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid rgba(30,58,95,.08); }
       .toast { position: fixed; bottom: 24px; right: 24px; padding: 13px 20px; border-radius: 12px; background: var(--accent); color: var(--bg); font-size: 13px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; transform: translateY(10px); transition: .2s ease; pointer-events: none; z-index: 999; }
       .toast.show { opacity: 1; transform: translateY(0); }
+
+      /* Payment status styles */
+      .payment-status { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; }
+      .payment-status:hover { opacity: 0.8; }
+      .payment-status-pending { background: #fef3c7; color: #92400e; }
+      .payment-status-completed { background: #d1fae5; color: #065f46; }
+      .payment-status-failed { background: #fee2e2; color: #991b1b; }
+      .payment-status-refunded { background: #f3f4f6; color: #6b7280; }
+      .payment-status-partial_refunded { background: #ffedd5; color: #c2410c; }
+
+      /* Payment modal styles */
+      .payment-section { margin-bottom: 20px; }
+      .payment-section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+      .payment-info-grid { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; }
+      .payment-info-label { color: var(--muted); font-size: 13px; }
+      .payment-info-value { font-size: 13px; font-weight: 600; }
+      .payment-history-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(30,58,95,.06); }
+      .payment-history-time { font-size: 12px; color: var(--muted); min-width: 50px; }
+      .payment-history-action { font-size: 13px; font-weight: 700; min-width: 80px; }
+      .payment-history-status { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+      .payment-history-status.success { background: #d1fae5; color: #065f46; }
+      .payment-history-status.error { background: #fee2e2; color: #991b1b; }
+      .payment-history-amount { font-size: 13px; font-weight: 700; margin-left: auto; }
+      .payment-error-item { padding: 10px 12px; background: #fef2f2; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #ef4444; }
+      .payment-error-time { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+      .payment-error-code { font-size: 12px; font-weight: 700; color: #991b1b; }
+      .payment-error-message { font-size: 13px; color: #991b1b; margin-top: 4px; }
     </style>
   </head>
   <body>
@@ -100,6 +127,14 @@
                 <option value="completed">Завершён</option>
                 <option value="cancelled">Отменён</option>
               </select>
+              <select id="filter-payment">
+                <option value="">Все платежи</option>
+                <option value="pending">Ожидает</option>
+                <option value="completed">Оплачен</option>
+                <option value="failed">Ошибка</option>
+                <option value="refunded">Возвращён</option>
+                <option value="partial_refunded">Частичный возврат</option>
+              </select>
               <select id="filter-type">
                 <option value="">Все</option>
                 <option value="self">Самовывоз</option>
@@ -117,6 +152,7 @@
                 <th>Клиент</th>
                 <th>Тип</th>
                 <th>Сумма</th>
+                <th>Оплата</th>
                 <th>Статус</th>
                 <th>Действия</th>
               </tr>
@@ -138,6 +174,20 @@
         <div class="modal-body" id="order-modal-body"></div>
         <div class="modal-footer">
           <button class="btn-ghost" onclick="closeOrderModal()">Закрыть</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Details Modal -->
+    <div class="modal-overlay" id="payment-modal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3 class="modal-title" id="payment-modal-title">Платёж</h3>
+          <button class="modal-close" onclick="closePaymentModal()">×</button>
+        </div>
+        <div class="modal-body" id="payment-modal-body"></div>
+        <div class="modal-footer" id="payment-modal-footer">
+          <button class="btn-ghost" onclick="closePaymentModal()">Закрыть</button>
         </div>
       </div>
     </div>
@@ -183,11 +233,13 @@
 
       function applyOrderFilters() {
         const statusFilter = document.getElementById('filter-status').value;
+        const paymentFilter = document.getElementById('filter-payment').value;
         const typeFilter = document.getElementById('filter-type').value;
         const search = document.getElementById('search-orders').value.toLowerCase();
 
         let filtered = allOrders.filter(o => {
           if (statusFilter && o.status !== statusFilter) return false;
+          if (paymentFilter && o.payment_status !== paymentFilter) return false;
           if (typeFilter && o.delivery_type !== typeFilter) return false;
           if (search) {
             const searchStr = (o.order_number || '') + ' ' + (o.customer_name || '') + ' ' + (o.customer_phone || '');
@@ -200,10 +252,26 @@
         updateStats(filtered);
       }
 
+      function renderPaymentStatus(order) {
+        const status = order.payment_status || 'pending';
+        const statusClass = 'payment-status payment-status-' + status;
+        const statusText = {
+          pending: 'Ожидает',
+          completed: 'Оплачен',
+          failed: 'Ошибка',
+          refunded: 'Возврат',
+          partial_refunded: 'Частичный возврат'
+        }[status] || status;
+        
+        // Make clickable if payment_operation_id exists
+        const onclick = order.payment_operation_id ? ' onclick="showPaymentDetails(' + order.id + ')"' : '';
+        return '<span class="' + statusClass + '"' + onclick + '>' + statusText + '</span>';
+      }
+
       function renderOrders(orders) {
         const tbody = document.getElementById('orders-tbody');
         if (!orders.length) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Заказов нет</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted);">Заказов нет</td></tr>';
           return;
         }
 
@@ -220,6 +288,7 @@
             '<td>' + (o.customer_name || '-') + '<br><small style="color:var(--muted)">' + (o.customer_phone || '') + '</small></td>' +
             '<td>' + type + '</td>' +
             '<td><b>' + total + ' ₽</b></td>' +
+            '<td>' + renderPaymentStatus(o) + '</td>' +
             '<td><span class="status-pill ' + statusClass + '">' + statusText + '</span></td>' +
             '<td>' +
               '<button class="btn-edit" onclick="showOrderDetails(' + o.id + ')">Подробнее</button>' +
@@ -265,11 +334,452 @@
         document.getElementById('order-modal').classList.remove('show');
       }
 
+      function closePaymentModal() {
+        document.getElementById('payment-modal').classList.remove('show');
+      }
+
+      async function showPaymentDetails(orderId) {
+        const order = allOrders.find(o => o.id === orderId);
+        if (!order || !order.payment_operation_id) {
+          showToast('Платёж не найден', true);
+          return;
+        }
+
+        // Show loading
+        document.getElementById('payment-modal-title').textContent = 'Заказ ' + (order.order_number || '#' + order.id) + ' — Платёж';
+        document.getElementById('payment-modal-body').innerHTML = '<p style="text-align:center;padding:40px;color:var(--muted);">Загрузка...</p>';
+        document.getElementById('payment-modal').classList.add('show');
+
+        try {
+          const details = await api('/api/payment/operations/' + order.payment_operation_id);
+          renderPaymentModal(order, details);
+        } catch (e) {
+          document.getElementById('payment-modal-body').innerHTML = '<p style="color:#991b1b;padding:20px;">Ошибка загрузки: ' + e.message + '</p>';
+        }
+      }
+
+      function renderPaymentModal(order, details) {
+        const status = details.status || order.payment_status || 'pending';
+        const statusClass = 'payment-status payment-status-' + status;
+        const statusText = {
+          pending: 'Ожидает',
+          authorized: 'Авторизован',
+          completed: 'Оплачен',
+          failed: 'Ошибка',
+          refunded: 'Возвращён',
+          partial_refunded: 'Частичный возврат'
+        }[status] || status;
+
+        // Format amounts (from kopeks to rubles)
+        const amount = details.amount ? (details.amount / 100).toFixed(0) : (order.payment_amount ? (order.payment_amount / 100).toFixed(0) : '0');
+        
+        // Format dates
+        const createdAt = details.createdAt ? new Date(details.createdAt).toLocaleString('ru') : '-';
+        const paidAt = details.paidAt ? new Date(details.paidAt).toLocaleString('ru') : '-';
+
+        // Payer details
+        const payerPhone = details.payerDetails?.phone || order.customer_phone || '-';
+        const payerEmail = details.payerDetails?.email || order.customer_email || '-';
+
+        // Receipt link
+        const receiptHtml = details.receiptUrl 
+          ? '<a href="' + details.receiptUrl + '" target="_blank" class="btn-primary" style="font-size:12px;padding:8px 14px;">Открыть чек</a>' 
+          : '<span style="color:var(--muted)">Чек не доступен</span>';
+
+        // Payment method
+        const paymentMethod = details.paymentMethod || 'SBP';
+
+        // Build HTML
+        let html = '';
+
+        // Payment info section
+        html += '<div class="payment-section">';
+        html += '<div class="payment-section-title">Информация о платеже</div>';
+        html += '<div class="payment-info-grid">';
+        html += '<span class="payment-info-label">ID операции</span>';
+        html += '<span class="payment-info-value" style="font-family:monospace;font-size:11px;">' + (details.paymentOperationId || order.payment_operation_id) + '</span>';
+        html += '<span class="payment-info-label">Статус</span>';
+        html += '<span class="' + statusClass + '">' + statusText + '</span>';
+        html += '<span class="payment-info-label">Сумма</span>';
+        html += '<span class="payment-info-value">' + amount + ' ₽</span>';
+        html += '<span class="payment-info-label">Способ оплаты</span>';
+        html += '<span class="payment-info-value">' + paymentMethod + '</span>';
+        html += '<span class="payment-info-label">Дата создания</span>';
+        html += '<span class="payment-info-value">' + createdAt + '</span>';
+        html += '<span class="payment-info-label">Дата оплаты</span>';
+        html += '<span class="payment-info-value">' + paidAt + '</span>';
+        html += '</div></div>';
+
+        // Payer details section
+        html += '<div class="payment-section">';
+        html += '<div class="payment-section-title">Данные плательщика</div>';
+        html += '<div class="payment-info-grid">';
+        html += '<span class="payment-info-label">Телефон</span>';
+        html += '<span class="payment-info-value">' + payerPhone + '</span>';
+        html += '<span class="payment-info-label">Email</span>';
+        html += '<span class="payment-info-value">' + payerEmail + '</span>';
+        html += '</div></div>';
+
+        // Receipt section
+        html += '<div class="payment-section">';
+        html += '<div class="payment-section-title">Чек</div>';
+        html += receiptHtml;
+        html += '</div>';
+
+        // History section
+        if (details.history && details.history.length > 0) {
+          html += '<div class="payment-section">';
+          html += '<div class="payment-section-title">История операций</div>';
+          html += details.history.map(h => {
+            const time = new Date(h.timestamp).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+            const actionText = { create: 'Создание', capture: 'Списание', refund: 'Возврат' }[h.action] || h.action;
+            const histStatusClass = h.status === 'success' ? 'success' : 'error';
+            const histStatusText = h.status === 'success' ? '✓ Успешно' : '✗ Ошибка';
+            const histAmount = h.amount ? (h.amount / 100).toFixed(0) + ' ₽' : '—';
+            return '<div class="payment-history-item">' +
+              '<span class="payment-history-time">' + time + '</span>' +
+              '<span class="payment-history-action">' + actionText + '</span>' +
+              '<span class="payment-history-status ' + histStatusClass + '">' + histStatusText + '</span>' +
+              '<span class="payment-history-amount">' + histAmount + '</span>' +
+            '</div>';
+          }).join('');
+          html += '</div>';
+        }
+
+        // Errors section
+        if (details.errors && details.errors.length > 0) {
+          html += '<div class="payment-section">';
+          html += '<div class="payment-section-title">Ошибки</div>';
+          html += details.errors.map(e => '<div class="payment-error-item">' +
+            '<div class="payment-error-time">' + new Date(e.timestamp).toLocaleString('ru') + '</div>' +
+            '<div class="payment-error-code">Код: ' + e.code + '</div>' +
+            '<div class="payment-error-message">' + e.message + '</div>' +
+          '</div>').join('');
+          html += '</div>';
+        }
+
+        document.getElementById('payment-modal-body').innerHTML = html;
+
+        // Update footer with action buttons based on status
+        const footer = document.getElementById('payment-modal-footer');
+        let footerHtml = '';
+
+        if (status === 'pending' || status === 'authorized') {
+          footerHtml += '<button class="btn-primary" onclick="showCaptureDialog(' + order.id + ')">Списать средства</button>';
+        }
+
+        if (status === 'completed' || status === 'captured') {
+          footerHtml += '<button class="btn-ghost" onclick="showRefundDialog(' + order.id + ')" style="border-color:#ef4444;color:#ef4444;">Вернуть средства</button>';
+        }
+
+        footerHtml += '<button class="btn-ghost" onclick="closePaymentModal()">Закрыть</button>';
+        footer.innerHTML = footerHtml;
+      }
+
       function showToast(msg, err) {
         const t = document.getElementById('toast');
         t.textContent = msg;
         t.className = 'toast' + (err ? ' err' : '') + ' show';
         setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      // Capture and Refund dialogs (for future implementation)
+      let currentCaptureOrderId = null;
+      let currentCaptureAmount = 0;
+
+      function showCaptureDialog(orderId) {
+        const order = allOrders.find(o => o.id === orderId);
+        if (!order || !order.payment_operation_id) {
+          showToast('Платёж не найден', true);
+          return;
+        }
+
+        currentCaptureOrderId = orderId;
+        // Get the authorized amount (convert from kopeks if needed)
+        const authAmount = order.payment_amount ? order.payment_amount / 100 : Number(order.total_amount || 0);
+        currentCaptureAmount = authAmount;
+
+        // Show capture confirmation in the payment modal
+        const body = document.getElementById('payment-modal-body');
+        body.innerHTML += '<div class="payment-section" style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">' +
+          '<div class="payment-section-title">Списание средств</div>' +
+          '<div style="margin-bottom:16px;">' +
+            '<label style="display:block;margin-bottom:8px;font-size:13px;font-weight:700;">Сумма списания (₽)</label>' +
+            '<input type="number" id="capture-amount" value="' + authAmount.toFixed(0) + '" min="1" max="' + authAmount.toFixed(0) + '" ' +
+              'style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;">' +
+            '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Доступно к списанию: <b>' + authAmount.toFixed(0) + ' ₽</b></div>' +
+          '</div>' +
+          '<button class="btn-primary" onclick="confirmCapture()" style="width:100%;">Подтвердить списание</button>' +
+        '</div>';
+
+        // Update footer to cancel capture
+        document.getElementById('payment-modal-footer').innerHTML = 
+          '<button class="btn-ghost" onclick="cancelCapture()">Отмена</button>';
+      }
+
+      function cancelCapture() {
+        // Reload payment details to remove capture section
+        if (currentCaptureOrderId) {
+          showPaymentDetails(currentCaptureOrderId);
+        }
+      }
+
+      async function confirmCapture() {
+        if (!currentCaptureOrderId) return;
+
+        const order = allOrders.find(o => o.id === currentCaptureOrderId);
+        if (!order || !order.payment_operation_id) {
+          showToast('Платёж не найден', true);
+          return;
+        }
+
+        const captureAmountInput = document.getElementById('capture-amount');
+        const captureAmount = parseFloat(captureAmountInput?.value || 0);
+
+        if (!captureAmount || captureAmount <= 0) {
+          showToast('Укажите сумму для списания', true);
+          return;
+        }
+
+        const maxAmount = order.payment_amount ? order.payment_amount / 100 : Number(order.total_amount || 0);
+        if (captureAmount > maxAmount) {
+          showToast('Сумма превышает доступную', true);
+          return;
+        }
+
+        // Convert to kopeks for API
+        const amountInKopeks = Math.round(captureAmount * 100);
+
+        try {
+          const result = await api('/api/payment/operations/' + order.payment_operation_id + '/capture', {
+            method: 'POST',
+            body: JSON.stringify({ amount: amountInKopeks })
+          });
+
+          if (result.success) {
+            showToast('Средства успешно списаны');
+            closePaymentModal();
+            loadOrders(); // Refresh table
+          } else {
+            showToast(result.error || 'Ошибка при списании', true);
+          }
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+        }
+
+        currentCaptureOrderId = null;
+      }
+
+      let currentRefundOrderId = null;
+      let currentRefundPaymentOpId = null;
+      let currentRefundMaxAmount = 0;
+      let currentRefundPaidAt = null;
+
+      async function showRefundDialog(orderId) {
+        const order = allOrders.find(o => o.id === orderId);
+        if (!order || !order.payment_operation_id) {
+          showToast('Платёж не найден', true);
+          return;
+        }
+
+        currentRefundOrderId = orderId;
+        currentRefundPaymentOpId = order.payment_operation_id;
+
+        // Show loading in payment modal
+        document.getElementById('payment-modal-title').textContent = 'Заказ ' + (order.order_number || '#' + order.id) + ' — Возврат';
+        document.getElementById('payment-modal-body').innerHTML = '<p style="text-align:center;padding:40px;color:var(--muted);">Загрузка...</p>';
+        document.getElementById('payment-modal').classList.add('show');
+
+        try {
+          // Get payment operation details for 90-day check and current amount
+          const details = await api('/api/payment/operations/' + order.payment_operation_id);
+
+          // Calculate refundable amount
+          const paidAmount = details.amount ? details.amount / 100 : (order.payment_amount ? order.payment_amount / 100 : Number(order.total_amount || 0));
+          const alreadyRefunded = details.refundedAmount ? details.refundedAmount / 100 : 0;
+          const refundableAmount = paidAmount - alreadyRefunded;
+
+          currentRefundMaxAmount = refundableAmount;
+          currentRefundPaidAt = details.paidAt ? new Date(details.paidAt) : null;
+
+          // Check 90-day limit
+          let dayLimitWarning = '';
+          if (currentRefundPaidAt) {
+            const daysSincePayment = Math.floor((Date.now() - currentRefundPaidAt.getTime()) / (1000 * 60 * 60 * 24));
+            if (daysSincePayment > 90) {
+              dayLimitWarning = '<div style="margin-bottom:16px;padding:12px;background:#fef3c7;border-radius:8px;border-left:3px solid #f59e0b;font-size:13px;">⚠️ <b>Внимание:</b> платежу более 90 дней (' + daysSincePayment + ' дней). Возврат может быть отклонён банком, но вы можете попробовать.</div>';
+            }
+          }
+
+          // Build refund form HTML
+          let html = '';
+
+          // Payment info section
+          html += '<div class="payment-section">';
+          html += '<div class="payment-section-title">Информация о платеже</div>';
+          html += '<div class="payment-info-grid">';
+          html += '<span class="payment-info-label">ID операции</span>';
+          html += '<span class="payment-info-value" style="font-family:monospace;font-size:11px;">' + (details.paymentOperationId || order.payment_operation_id) + '</span>';
+          html += '<span class="payment-info-label">Оплаченная сумма</span>';
+          html += '<span class="payment-info-value">' + paidAmount.toFixed(0) + ' ₽</span>';
+          html += '<span class="payment-info-label">Уже возвращено</span>';
+          html += '<span class="payment-info-value">' + alreadyRefunded.toFixed(0) + ' ₽</span>';
+          html += '<span class="payment-info-label">Доступно к возврату</span>';
+          html += '<span class="payment-info-value" style="color:var(--accent);font-weight:800;">' + refundableAmount.toFixed(0) + ' ₽</span>';
+          html += '</div></div>';
+
+          // Refund form section
+          html += '<div class="payment-section" style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">';
+          html += '<div class="payment-section-title">Возврат средств</div>';
+          html += dayLimitWarning;
+          html += '<div style="margin-bottom:16px;">';
+          html += '<label style="display:block;margin-bottom:8px;font-size:13px;font-weight:700;">Сумма возврата (₽)</label>';
+          html += '<input type="number" id="refund-amount" value="' + refundableAmount.toFixed(0) + '" min="1" max="' + refundableAmount.toFixed(0) + '" ';
+          html += 'style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;">';
+          html += '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Доступно: <b>' + refundableAmount.toFixed(0) + ' ₽</b></div>';
+          html += '</div>';
+          html += '<div style="margin-bottom:16px;">';
+          html += '<label style="display:block;margin-bottom:8px;font-size:13px;font-weight:700;">Причина возврата *</label>';
+          html += '<select id="refund-reason" style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;background:var(--bg);">';
+          html += '<option value="">Выберите причину...</option>';
+          html += '<option value="customer_request">По просьбе клиента</option>';
+          html += '<option value="duplicate">Двойное списание</option>';
+          html += '<option value="not_received">Товар/услуга не получены</option>';
+          html += '<option value="cancelled">Заказ отменён</option>';
+          html += '<option value="other">Другое</option>';
+          html += '</select>';
+          html += '</div>';
+          html += '<div id="refund-reason-other" style="margin-bottom:16px;display:none;">';
+          html += '<label style="display:block;margin-bottom:8px;font-size:13px;font-weight:700;">Укажите причину</label>';
+          html += '<input type="text" id="refund-reason-text" placeholder="Опишите причину возврата..." ';
+          html += 'style="width:100%;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);font-size:14px;">';
+          html += '</div>';
+          html += '<button class="btn-primary" onclick="confirmRefund()" style="width:100%;background:#ef4444;border-color:#ef4444;">Вернуть средства</button>';
+          html += '</div>';
+
+          // Add event listener to show/hide other reason input
+          setTimeout(() => {
+            const reasonSelect = document.getElementById('refund-reason');
+            if (reasonSelect) {
+              reasonSelect.addEventListener('change', function() {
+                const otherDiv = document.getElementById('refund-reason-other');
+                if (otherDiv) {
+                  otherDiv.style.display = this.value === 'other' ? 'block' : 'none';
+                }
+              });
+            }
+          }, 0);
+
+          document.getElementById('payment-modal-body').innerHTML = html;
+
+          // Update footer with cancel button
+          document.getElementById('payment-modal-footer').innerHTML = 
+            '<button class="btn-ghost" onclick="cancelRefund()">Отмена</button>';
+
+        } catch (e) {
+          document.getElementById('payment-modal-body').innerHTML = '<p style="color:#991b1b;padding:20px;">Ошибка загрузки: ' + e.message + '</p>';
+          document.getElementById('payment-modal-footer').innerHTML = 
+            '<button class="btn-ghost" onclick="closePaymentModal()">Закрыть</button>';
+        }
+      }
+
+      function cancelRefund() {
+        // Reload payment details to remove refund section
+        if (currentRefundOrderId) {
+          showPaymentDetails(currentRefundOrderId);
+        }
+      }
+
+      async function confirmRefund() {
+        if (!currentRefundPaymentOpId) {
+          showToast('Платёж не найден', true);
+          return;
+        }
+
+        const order = allOrders.find(o => o.id === currentRefundOrderId);
+        if (!order) {
+          showToast('Заказ не найден', true);
+          return;
+        }
+
+        const refundAmountInput = document.getElementById('refund-amount');
+        const refundAmount = parseFloat(refundAmountInput?.value || 0);
+
+        if (!refundAmount || refundAmount <= 0) {
+          showToast('Укажите сумму для возврата', true);
+          return;
+        }
+
+        if (refundAmount > currentRefundMaxAmount) {
+          showToast('Сумма превышает доступную для возврата', true);
+          return;
+        }
+
+        const reasonSelect = document.getElementById('refund-reason');
+        let reason = reasonSelect?.value || '';
+        const reasonText = document.getElementById('refund-reason-text')?.value || '';
+
+        if (!reason) {
+          showToast('Выберите причину возврата', true);
+          return;
+        }
+
+        if (reason === 'other' && !reasonText.trim()) {
+          showToast('Укажите причину возврата', true);
+          return;
+        }
+
+        // Build final reason string
+        const reasonMap = {
+          'customer_request': 'По просьбе клиента',
+          'duplicate': 'Двойное списание',
+          'not_received': 'Товар/услуга не получены',
+          'cancelled': 'Заказ отменён',
+          'other': reasonText
+        };
+        const finalReason = reasonMap[reason] || reason;
+
+        // Convert to kopeks for API
+        const amountInKopeks = Math.round(refundAmount * 100);
+
+        // Show loading state
+        const btn = document.querySelector('#payment-modal-body .btn-primary');
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Обработка...';
+        }
+
+        try {
+          const result = await api('/api/payment/operations/' + currentRefundPaymentOpId + '/refund', {
+            method: 'POST',
+            body: JSON.stringify({ amount: amountInKopeks, reason: finalReason })
+          });
+
+          if (result.success) {
+            showToast('Средства успешно возвращены');
+            closePaymentModal();
+            loadOrders(); // Refresh table
+          } else {
+            showToast(result.error || 'Ошибка при возврате', true);
+            // Reset button
+            if (btn) {
+              btn.disabled = false;
+              btn.textContent = 'Вернуть средства';
+            }
+          }
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, true);
+          // Reset button
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Вернуть средства';
+          }
+        }
+
+        currentRefundOrderId = null;
+        currentRefundPaymentOpId = null;
+        currentRefundMaxAmount = 0;
+        currentRefundPaidAt = null;
       }
 
       async function deleteOrder(id) {
@@ -285,15 +795,52 @@
       }
 
       function exportOrders() {
-        let csv = 'Номер,Дата,Клиент,Телефон,Тип,Сумма,Статус\n';
-        allOrders.forEach(o => {
+        // Get current filters and apply them
+        const statusFilter = document.getElementById('filter-status').value;
+        const paymentFilter = document.getElementById('filter-payment').value;
+        const typeFilter = document.getElementById('filter-type').value;
+        const search = document.getElementById('search-orders').value.toLowerCase();
+
+        // Filter orders using the same logic as applyOrderFilters
+        const filteredOrders = allOrders.filter(o => {
+          if (statusFilter && o.status !== statusFilter) return false;
+          if (paymentFilter && o.payment_status !== paymentFilter) return false;
+          if (typeFilter && o.delivery_type !== typeFilter) return false;
+          if (search) {
+            const searchStr = (o.order_number || '') + ' ' + (o.customer_name || '') + ' ' + (o.customer_phone || '');
+            if (!searchStr.toLowerCase().includes(search)) return false;
+          }
+          return true;
+        });
+
+        // Payment status text mapping (Russian)
+        const paymentStatusText = {
+          pending: 'Ожидает',
+          completed: 'Оплачен',
+          failed: 'Ошибка',
+          refunded: 'Возврат',
+          partial_refunded: 'Частичный возврат'
+        };
+
+        let csv = 'Номер,Дата,Клиент,Телефон,Тип,Сумма,Статус оплаты,Сумма оплаты,Дата оплаты,Статус заказа\n';
+        filteredOrders.forEach(o => {
           csv += '"' + (o.order_number || o.id) + '",';
           csv += '"' + new Date(o.created_at).toLocaleString('ru') + '",';
           csv += '"' + (o.customer_name || '') + '",';
           csv += '"' + (o.customer_phone || '') + '",';
           csv += '"' + (o.delivery_type === 'courier' ? 'Доставка' : 'Самовывоз') + '",';
           csv += (o.total_amount || 0) + ',';
-          csv += '"' + (o.status || '') + '"\n';
+          // Payment status (Russian)
+          csv += '"' + (paymentStatusText[o.payment_status] || o.payment_status || 'Ожидает') + '",';
+          // Payment amount in rubles (convert from kopeks)
+          const paymentAmount = o.payment_amount ? (o.payment_amount / 100).toFixed(0) : '';
+          csv += '"' + paymentAmount + '",';
+          // Payment date in Russian locale
+          const paymentDate = o.payment_paid_at ? new Date(o.payment_paid_at).toLocaleString('ru') : '';
+          csv += '"' + paymentDate + '",';
+          // Order status (Russian)
+          const orderStatusText = { pending: 'Новый', paid: 'Оплачен', failed: 'Ошибка', ready: 'Готов', completed: 'Завершён', cancelled: 'Отменён' };
+          csv += '"' + (orderStatusText[o.status] || o.status || '') + '"\n';
         });
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
@@ -304,6 +851,7 @@
 
       // Event listeners
       document.getElementById('filter-status').addEventListener('change', applyOrderFilters);
+      document.getElementById('filter-payment').addEventListener('change', applyOrderFilters);
       document.getElementById('filter-type').addEventListener('change', applyOrderFilters);
       document.getElementById('search-orders').addEventListener('input', applyOrderFilters);
 

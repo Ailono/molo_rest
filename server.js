@@ -91,7 +91,11 @@ async function initDB() {
     'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_url TEXT',
     'ALTER TABLE orders ADD COLUMN IF NOT EXISTS session_id TEXT',
     'ALTER TABLE orders ADD COLUMN IF NOT EXISTS offer_accepted BOOLEAN DEFAULT FALSE',
-    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS pdpa_consent BOOLEAN DEFAULT FALSE'
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS pdpa_consent BOOLEAN DEFAULT FALSE',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_amount INTEGER DEFAULT 0',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS captured_at TIMESTAMP',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMP',
+    'ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_amount INTEGER DEFAULT 0'
   ];
   
   for (const sql of migrations) {
@@ -943,6 +947,54 @@ class TochkaPaymentService {
    * @private
    */
   _mapPaymentInfo(apiResponse) {
+    // Build history from available events data
+    const history = [];
+    
+    // Add creation event
+    if (apiResponse.created_at) {
+      history.push({
+        timestamp: apiResponse.created_at,
+        action: 'create',
+        status: 'success',
+        amount: null
+      });
+    }
+    
+    // Add capture event if payment was captured/paid
+    if (apiResponse.paid_at || apiResponse.status === 'paid' || apiResponse.status === 'captured') {
+      history.push({
+        timestamp: apiResponse.paid_at || apiResponse.updated_at,
+        action: 'capture',
+        status: 'success',
+        amount: apiResponse.amount
+      });
+    }
+    
+    // Add refund events if any
+    if (apiResponse.refunded_amount && apiResponse.refunded_amount > 0) {
+      history.push({
+        timestamp: apiResponse.refunded_at || apiResponse.updated_at,
+        action: 'refund',
+        status: 'success',
+        amount: apiResponse.refunded_amount
+      });
+    }
+    
+    // Add any additional events from API
+    if (apiResponse.events && Array.isArray(apiResponse.events)) {
+      apiResponse.events.forEach(event => {
+        history.push({
+          timestamp: event.timestamp || event.created_at,
+          action: event.type || event.action,
+          status: event.status === 'success' ? 'success' : 'error',
+          amount: event.amount
+        });
+      });
+    }
+    
+    // Sort history by timestamp (newest first)
+    history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
     return {
       paymentOperationId: apiResponse.payment_operation_id,
       status: this._mapStatus(apiResponse.status),
@@ -954,7 +1006,10 @@ class TochkaPaymentService {
       payerDetails: apiResponse.payer,
       receiptUrl: apiResponse.receipt_url,
       errorCode: apiResponse.error_code,
-      errorMessage: apiResponse.error_message
+      errorMessage: apiResponse.error_message,
+      history: history,
+      refundedAmount: apiResponse.refunded_amount || 0,
+      refundedAt: apiResponse.refunded_at
     };
   }
 
@@ -980,6 +1035,7 @@ class TochkaPaymentService {
    * @private
    */
   _getStubPaymentInfo(paymentOperationId) {
+    const now = new Date().toISOString();
     return {
       success: true,
       info: {
@@ -987,8 +1043,14 @@ class TochkaPaymentService {
         status: 'paid',
         amount: 0,
         currency: 'RUB',
-        createdAt: new Date().toISOString(),
-        paidAt: new Date().toISOString()
+        createdAt: now,
+        paidAt: now,
+        history: [
+          { timestamp: now, action: 'capture', status: 'success', amount: 0 },
+          { timestamp: now, action: 'create', status: 'success', amount: null }
+        ],
+        refundedAmount: 0,
+        refundedAt: null
       }
     };
   }
@@ -1102,6 +1164,9 @@ class TochkaPaymentService {
       const order = rows[0];
       const oldStatus = order.payment_status;
 
+      // Get amount from payload (in kopeks)
+      const amount = payload.amount || 0;
+
       // Map status
       const newPaymentStatus = this._mapStatus(status);
       let newOrderStatus = order.status;
@@ -1117,9 +1182,10 @@ class TochkaPaymentService {
         `UPDATE orders SET 
           payment_status = $1,
           status = $2,
-          captured_at = CASE WHEN $2 = 'paid' THEN NOW() ELSE captured_at END
-        WHERE id = $3`,
-        [newPaymentStatus, newOrderStatus, order.id]
+          captured_at = CASE WHEN $2 = 'paid' THEN NOW() ELSE captured_at END,
+          payment_amount = COALESCE($3, payment_amount)
+        WHERE id = $4`,
+        [newPaymentStatus, newOrderStatus, amount, order.id]
       );
 
       // Add status history
