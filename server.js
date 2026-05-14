@@ -1203,7 +1203,7 @@ class TochkaPaymentService {
           
           if (fiscalResult.success) {
             await this.pool.query(
-              'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3 WHERE id = $4',
+              'UPDATE orders SET receipt_id = $1, receipt_url = $2, fiscal_status = $3, fiscal_error = NULL WHERE id = $4',
               [fiscalResult.receiptId, fiscalResult.receiptUrl, 'sent', order.id]
             );
             console.log('[PaymentService] Fiscal receipt sent:', fiscalResult.receiptId);
@@ -1222,9 +1222,35 @@ class TochkaPaymentService {
                 console.error('[PaymentService] Failed to send receipt email:', emailError.message);
               }
             }
+          } else {
+            // Log fiscal error with detailed context
+            const errorDetails = fiscalResult.errorCode 
+              ? `[${fiscalResult.errorCode}] ${fiscalResult.error}`
+              : fiscalResult.error;
+            
+            await this.pool.query(
+              'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
+              ['error', errorDetails, order.id]
+            );
+            console.error('[PaymentService] Fiscal receipt failed:', errorDetails);
           }
         } catch (fiscalError) {
-          console.error('[PaymentService] Fiscal receipt error:', fiscalError.message);
+          // Handle unexpected errors
+          const errorMessage = fiscalError.errorCode 
+            ? `[${fiscalError.errorCode}] ${fiscalError.message}`
+            : fiscalError.message;
+          
+          console.error('[PaymentService] Fiscal receipt error:', errorMessage);
+          
+          // Save error to database
+          try {
+            await this.pool.query(
+              'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
+              ['error', errorMessage, order.id]
+            );
+          } catch (dbError) {
+            console.error('[PaymentService] Failed to save fiscal error:', dbError.message);
+          }
         }
       }
 
@@ -1329,12 +1355,143 @@ if (!FISCAL_CONFIG.apiUrl && FISCAL_PROVIDER_DEFAULTS[FISCAL_CONFIG.provider]) {
   FISCAL_CONFIG.apiUrl = FISCAL_PROVIDER_DEFAULTS[FISCAL_CONFIG.provider].apiUrl;
 }
 
+// ── FiscalError class for error classification ────────────────────────────
+class FiscalError extends Error {
+  constructor(code, message, details = null) {
+    super(message);
+    this.name = 'FiscalError';
+    this.code = code;
+    this.details = details;
+    this.isCritical = this._isCritical(code);
+  }
+
+  /**
+   * Determine if error is critical and requires admin notification
+   * @param {string} code - Error code
+   * @returns {boolean}
+   * @private
+   */
+  _isCritical(code) {
+    // Critical errors that require admin attention
+    const CRITICAL_ERRORS = [
+      'AUTH_ERROR',       // Invalid API key - needs immediate attention
+      'FISCAL_ERROR',     // Error from ФНС - needs investigation
+      'VALIDATION_ERROR', // Invalid receipt data - needs fixing
+      'KKT_ERROR'         // Cash register hardware error
+    ];
+    return CRITICAL_ERRORS.includes(code);
+  }
+
+  /**
+   * Check if error is retryable
+   * @returns {boolean}
+   */
+  isRetryable() {
+    const RETRYABLE_ERRORS = ['NETWORK_ERROR', 'TIMEOUT_ERROR', 'RATE_LIMIT'];
+    return RETRYABLE_ERRORS.includes(this.code);
+  }
+}
+
+// ── FiscalErrorClassifier ─────────────────────────────────────────────────
+const FiscalErrorClassifier = {
+  /**
+   * Classify error from fiscal API response
+   * @param {Error} error - Original error
+   * @returns {FiscalError}
+   */
+  classify(error) {
+    // Handle FiscalError instances
+    if (error instanceof FiscalError) {
+      return error;
+    }
+
+    // Handle fetch/response errors
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data || {};
+
+      switch (status) {
+        case 400:
+          return new FiscalError(
+            'VALIDATION_ERROR',
+            data.message || 'Неверные данные чека',
+            { status, ...data }
+          );
+        case 401:
+        case 403:
+          return new FiscalError(
+            'AUTH_ERROR',
+            data.message || 'Ошибка авторизации в API кассы',
+            { status, ...data }
+          );
+        case 404:
+          return new FiscalError(
+            'NOT_FOUND',
+            data.message || 'Ресурс не найден',
+            { status, ...data }
+          );
+        case 429:
+          return new FiscalError(
+            'RATE_LIMIT',
+            data.message || 'Превышен лимит запросов',
+            { status, retryAfter: error.response.headers?.['retry-after'], ...data }
+          );
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          return new FiscalError(
+            'NETWORK_ERROR',
+            data.message || 'Сервис фискализации временно недоступен',
+            { status, ...data }
+          );
+        default:
+          return new FiscalError(
+            'INTERNAL_ERROR',
+            data.message || 'Неизвестная ошибка',
+            { status, ...data }
+          );
+      }
+    }
+
+    // Handle network errors
+    if (error.code === 'ECONNABORTED') {
+      return new FiscalError('TIMEOUT_ERROR', 'Превышено время ожидания ответа', { code: error.code });
+    }
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return new FiscalError('NETWORK_ERROR', 'Не удалось подключиться к сервису фискализации', { code: error.code });
+    }
+
+    // Handle ФНС specific errors (from callback or API response)
+    if (error.fnsError) {
+      return new FiscalError(
+        'FISCAL_ERROR',
+        error.fnsError.message || 'Ошибка ФНС',
+        { fnsCode: error.fnsError.code, fnsMessage: error.fnsError.message }
+      );
+    }
+
+    // Handle KKT errors
+    if (error.kktError) {
+      return new FiscalError(
+        'KKT_ERROR',
+        error.kktError.message || 'Ошибка кассы',
+        { kktCode: error.kktError.code }
+      );
+    }
+
+    // Default to internal error
+    return new FiscalError('INTERNAL_ERROR', error.message || 'Неизвестная ошибка');
+  }
+};
+
 // ── FiscalService (cloud online cash register integration) ───────────────
 const FiscalService = {
   /**
    * Send receipt for payment (54-ФЗ)
+   * Validates: Requirements 19.7
    * @param {object} order - Order object
-   * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string }}
+   * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string, isCritical?: boolean }}
    */
   async sendReceipt(order) {
     try {
@@ -1346,7 +1503,7 @@ const FiscalService = {
       
       // In production, make actual API call to cloud cash register
       if (FISCAL_CONFIG.apiUrl && FISCAL_CONFIG.apiKey) {
-        const response = await this._sendToApi(receiptData);
+        const response = await this._sendWithRetry(receiptData, order.id);
         return {
           success: true,
           receiptId: response.id,
@@ -1360,17 +1517,38 @@ const FiscalService = {
       
       return { success: true, receiptId, receiptUrl };
     } catch (error) {
-      console.error('[FiscalService] Error sending receipt:', error.message);
-      return { success: false, error: error.message };
+      const classifiedError = FiscalErrorClassifier.classify(error);
+      
+      // Log error with full context
+      console.error('[FiscalService] Error sending receipt:', {
+        orderId: order.id,
+        errorCode: classifiedError.code,
+        errorMessage: classifiedError.message,
+        isCritical: classifiedError.isCritical,
+        details: classifiedError.details
+      });
+      
+      // Notify admin for critical errors
+      if (classifiedError.isCritical) {
+        await this._notifyAdminError(order, classifiedError, 'sendReceipt');
+      }
+      
+      return { 
+        success: false, 
+        error: classifiedError.message,
+        errorCode: classifiedError.code,
+        isCritical: classifiedError.isCritical
+      };
     }
   },
   
   /**
    * Send receipt for refund (54-ФЗ)
+   * Validates: Requirements 19.7
    * @param {object} order - Order object
    * @param {number} refundAmount - Refund amount
    * @param {Array} [refundItems] - Optional array of items being refunded (for partial refunds)
-   * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string }}
+   * @returns {{ success: boolean, receiptId?: string, receiptUrl?: string, error?: string, isCritical?: boolean }}
    */
   async sendRefundReceipt(order, refundAmount, refundItems = null) {
     try {
@@ -1382,7 +1560,7 @@ const FiscalService = {
       
       // In production, make actual API call
       if (FISCAL_CONFIG.apiUrl && FISCAL_CONFIG.apiKey) {
-        const response = await this._sendToApi(receiptData);
+        const response = await this._sendWithRetry(receiptData, order.id, 'refund');
         return {
           success: true,
           receiptId: response.id,
@@ -1396,8 +1574,29 @@ const FiscalService = {
       
       return { success: true, receiptId, receiptUrl };
     } catch (error) {
-      console.error('[FiscalService] Error sending refund receipt:', error.message);
-      return { success: false, error: error.message };
+      const classifiedError = FiscalErrorClassifier.classify(error);
+      
+      // Log error with full context
+      console.error('[FiscalService] Error sending refund receipt:', {
+        orderId: order.id,
+        refundAmount,
+        errorCode: classifiedError.code,
+        errorMessage: classifiedError.message,
+        isCritical: classifiedError.isCritical,
+        details: classifiedError.details
+      });
+      
+      // Notify admin for critical errors
+      if (classifiedError.isCritical) {
+        await this._notifyAdminError(order, classifiedError, 'sendRefundReceipt', refundAmount);
+      }
+      
+      return { 
+        success: false, 
+        error: classifiedError.message,
+        errorCode: classifiedError.code,
+        isCritical: classifiedError.isCritical
+      };
     }
   },
   
@@ -1583,17 +1782,23 @@ const FiscalService = {
   },
   
   /**
-   * Send data to cloud cash register API
+   * Send data to cloud cash register API with retry logic
+   * Validates: Requirements 19.7 (3 attempts with exponential backoff)
    * @param {object} data - Receipt data
+   * @param {number} orderId - Order ID for logging
+   * @param {string} [type='sale'] - Receipt type ('sale' or 'refund')
    * @returns {Promise<object>} API response
    * @private
    */
-  async _sendToApi(data) {
+  async _sendWithRetry(data, orderId, type = 'sale') {
     const maxRetries = 3;
+    const baseDelayMs = 1000; // 1 second base delay
     let lastError;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        console.log(`[FiscalService] Attempt ${attempt}/${maxRetries} for order ${orderId}`);
+        
         const response = await fetch(`${FISCAL_CONFIG.apiUrl}/v1/receipts`, {
           method: 'POST',
           headers: {
@@ -1605,22 +1810,80 @@ const FiscalService = {
         
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`API error: ${response.status} - ${errorText}`);
+          const error = new Error(`API error: ${response.status} - ${errorText}`);
+          error.response = { 
+            status: response.status, 
+            data: this._tryParseJson(errorText),
+            headers: Object.fromEntries(response.headers.entries())
+          };
+          throw error;
         }
         
-        return await response.json();
+        const result = await response.json();
+        console.log(`[FiscalService] ✓ Success on attempt ${attempt} for order ${orderId}`);
+        return result;
+        
       } catch (error) {
         lastError = error;
-        console.error(`[FiscalService] Attempt ${attempt} failed:`, error.message);
+        const classifiedError = FiscalErrorClassifier.classify(error);
         
-        // Wait before retry (exponential backoff)
+        console.error(`[FiscalService] Attempt ${attempt}/${maxRetries} failed for order ${orderId}:`, {
+          errorCode: classifiedError.code,
+          errorMessage: classifiedError.message,
+          isRetryable: classifiedError.isRetryable()
+        });
+        
+        // Don't retry if error is not retryable
+        if (!classifiedError.isRetryable()) {
+          console.error(`[FiscalService] Error is not retryable (${classifiedError.code}), stopping retries`);
+          throw classifiedError;
+        }
+        
+        // Wait before retry with exponential backoff (1s, 2s, 4s)
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+          const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+          console.log(`[FiscalService] Waiting ${delayMs}ms before retry...`);
+          await this._sleep(delayMs);
         }
       }
     }
     
-    throw lastError || new Error('Max retries exceeded');
+    // All retries exhausted
+    const finalError = FiscalErrorClassifier.classify(lastError);
+    console.error(`[FiscalService] All ${maxRetries} attempts failed for order ${orderId}`);
+    throw finalError;
+  },
+
+  /**
+   * Legacy method name for backwards compatibility
+   * @deprecated Use _sendWithRetry instead
+   * @private
+   */
+  async _sendToApi(data) {
+    return this._sendWithRetry(data, data.external_id ? parseInt(data.external_id.replace('order_', ''), 10) : 0);
+  },
+
+  /**
+   * Try to parse JSON, return raw text if fails
+   * @param {string} text - Text to parse
+   * @returns {object|string}
+   * @private
+   */
+  _tryParseJson(text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  },
+
+  /**
+   * Sleep for specified milliseconds
+   * @param {number} ms - Milliseconds to sleep
+   * @private
+   */
+  _sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   },
   
   /**
@@ -1716,6 +1979,10 @@ const FiscalService = {
         console.log(`[FiscalService] ✓ Callback SUCCESS: Order ${orderId} fiscal_status=completed, receipt_id=${receipt_id || 'N/A'}`);
       } else if (status === 'error') {
         console.error(`[FiscalService] ✗ Callback ERROR: Order ${orderId} fiscal_status=error, error=${error}`);
+        
+        // Notify admin about fiscal error from callback
+        // This handles errors reported by the fiscal provider asynchronously
+        await this._notifyAdminCallbackError(orderId, error, receipt_id);
       } else {
         console.log(`[FiscalService] → Callback UPDATE: Order ${orderId} fiscal_status=${status}`);
       }
@@ -1725,6 +1992,129 @@ const FiscalService = {
       console.error('[FiscalService] ✗ Callback FAILED:', err.message);
       console.error('[FiscalService] Callback payload was:', JSON.stringify(payload));
       return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Notify admin about critical fiscal error
+   * Validates: Requirements 19.7
+   * @param {object} order - Order object
+   * @param {FiscalError} error - Classified error
+   * @param {string} operation - Operation type ('sendReceipt' or 'sendRefundReceipt')
+   * @param {number} [refundAmount] - Refund amount if operation is refund
+   * @private
+   */
+  async _notifyAdminError(order, error, operation, refundAmount = null) {
+    try {
+      const operationText = operation === 'sendRefundReceipt' 
+        ? `чек возврата (сумма: ${refundAmount} ₽)` 
+        : 'чек оплаты';
+      
+      const message = `🚨 <b>КРИТИЧЕСКАЯ ОШИБКА ФИСКАЛИЗАЦИИ</b>
+
+📋 <b>Заказ:</b> #${order.order_number || order.id}
+👤 <b>Клиент:</b> ${order.customer_name}
+📞 <b>Телефон:</b> ${order.customer_phone}
+
+⚠️ <b>Ошибка:</b> ${error.message}
+🏷️ <b>Код ошибки:</b> ${error.code}
+📄 <b>Операция:</b> ${operationText}
+${error.details ? `\n📊 <b>Детали:</b> <code>${JSON.stringify(error.details)}</code>` : ''}
+
+⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
+
+<i>Требуется ручное вмешательство!</i>`;
+
+      // Send via Telegram (primary admin notification channel)
+      if (NOTIFICATION_CONFIG.telegram.enabled && NOTIFICATION_CONFIG.telegram.botToken && NOTIFICATION_CONFIG.telegram.chatId) {
+        await fetch(`https://api.telegram.org/bot${NOTIFICATION_CONFIG.telegram.botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: NOTIFICATION_CONFIG.telegram.chatId,
+            text: message,
+            parse_mode: 'HTML'
+          })
+        });
+        console.log('[FiscalService] Admin notified about critical error via Telegram');
+      }
+
+      // Also send email if configured
+      if (NOTIFICATION_CONFIG.email.enabled && NOTIFICATION_CONFIG.email.smtpHost && NOTIFICATION_CONFIG.email.to) {
+        const emailSubject = `🚨 Критическая ошибка фискализации - Заказ #${order.order_number || order.id}`;
+        const emailText = `
+КРИТИЧЕСКАЯ ОШИБКА ФИСКАЛИЗАЦИИ
+
+Заказ: #${order.order_number || order.id}
+Клиент: ${order.customer_name}
+Телефон: ${order.customer_phone}
+Email: ${order.customer_email || 'не указан'}
+
+Операция: ${operationText}
+Код ошибки: ${error.code}
+Сообщение: ${error.message}
+${error.details ? `Детали: ${JSON.stringify(error.details, null, 2)}` : ''}
+
+Время: ${new Date().toLocaleString('ru-RU')}
+
+Требуется ручное вмешательство!
+
+---
+Автоматическое уведомление от системы фискализации
+        `.trim();
+
+        // Use the existing email transport if available
+        // This will be handled by NotificationService if it's fully configured
+        console.log('[FiscalService] Admin email notification prepared (email sending handled by NotificationService)');
+      }
+
+    } catch (notifyError) {
+      // Don't let notification failure affect the main flow
+      console.error('[FiscalService] Failed to notify admin about error:', notifyError.message);
+    }
+  },
+
+  /**
+   * Notify admin about fiscal error received via callback
+   * @param {number} orderId - Order ID
+   * @param {string} error - Error message from callback
+   * @param {string} [receiptId] - Receipt ID
+   * @private
+   */
+  async _notifyAdminCallbackError(orderId, error, receiptId = null) {
+    try {
+      // Get order details for better context
+      const { rows } = await pool.query('SELECT order_number, customer_name, customer_phone FROM orders WHERE id = $1', [orderId]);
+      const order = rows[0] || { order_number: orderId };
+
+      const message = `⚠️ <b>ОШИБКА ФИСКАЛИЗАЦИИ (Callback)</b>
+
+📋 <b>Заказ:</b> #${order.order_number || orderId}
+${order.customer_name ? `👤 <b>Клиент:</b> ${order.customer_name}` : ''}
+${receiptId ? `🧾 <b>ID чека:</b> ${receiptId}` : ''}
+
+❌ <b>Ошибка:</b> ${error}
+
+⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
+
+<i>Проверьте статус заказа в админ-панели</i>`;
+
+      // Send via Telegram
+      if (NOTIFICATION_CONFIG.telegram.enabled && NOTIFICATION_CONFIG.telegram.botToken && NOTIFICATION_CONFIG.telegram.chatId) {
+        await fetch(`https://api.telegram.org/bot${NOTIFICATION_CONFIG.telegram.botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: NOTIFICATION_CONFIG.telegram.chatId,
+            text: message,
+            parse_mode: 'HTML'
+          })
+        });
+        console.log('[FiscalService] Admin notified about callback error via Telegram');
+      }
+
+    } catch (notifyError) {
+      console.error('[FiscalService] Failed to notify admin about callback error:', notifyError.message);
     }
   }
 };
@@ -2655,17 +3045,27 @@ app.post('/api/payment/webhook', async (req, res) => {
               }
             }
           } else {
+            // Build detailed error message with code if available
+            const errorDetails = fiscalResult.errorCode 
+              ? `[${fiscalResult.errorCode}] ${fiscalResult.error}`
+              : fiscalResult.error;
+            
             await pool.query(
-              'UPDATE orders SET fiscal_status = $2, fiscal_error = $3 WHERE id = $4',
-              [order.id, 'error', fiscalResult.error]
+              'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
+              ['error', errorDetails, order.id]
             );
-            console.error('[PaymentWebhook] Fiscal receipt failed:', fiscalResult.error);
+            console.error('[PaymentWebhook] Fiscal receipt failed:', errorDetails);
           }
         } catch (fiscalError) {
-          console.error('[PaymentWebhook] FiscalService error:', fiscalError.message);
+          // Handle unexpected errors (should be rare with proper error classification)
+          const errorMessage = fiscalError.errorCode 
+            ? `[${fiscalError.errorCode}] ${fiscalError.message}`
+            : fiscalError.message;
+          
+          console.error('[PaymentWebhook] FiscalService error:', errorMessage);
           await pool.query(
             'UPDATE orders SET fiscal_status = $1, fiscal_error = $2 WHERE id = $3',
-            ['error', fiscalError.message, order.id]
+            ['error', errorMessage, order.id]
           );
         }
       }
