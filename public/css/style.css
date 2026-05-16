@@ -777,11 +777,15 @@ tr:last-child td{ border-bottom: 0; }
   font-size: 16px;
   line-height: 1.8;
   color: var(--ink);
-  margin: 0 0 16px;
+  margin: 0 0 12px;
 }
 
 .pasta-description:last-child {
   margin-bottom: 0;
+}
+
+.pasta-description strong {
+  color: var(--mocha);
 }
 
 .pasta-description strong {
