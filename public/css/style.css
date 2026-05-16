@@ -803,8 +803,21 @@ tr:last-child td{ border-bottom: 0; }
 }
 
 @media (max-width: 560px){
-  .hero-grid{ gap: 16px; }
-  .headline{ padding: 22px 18px; }
+  .hero-grid{ 
+    gap: 16px; 
+    min-height: 320px;
+    align-items: center;
+  }
+  .hero-grid .headline {
+    align-items: center;
+    justify-content: center;
+  }
+  .headline{ 
+    padding: 22px 18px; 
+    justify-content: center;
+    min-height: auto;
+    align-items: center;
+  }
   .features-grid{ grid-template-columns: 1fr; }
   .menu-grid{ grid-template-columns: 1fr; }
   .header-inner{ align-items:center; }
