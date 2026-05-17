@@ -181,7 +181,7 @@ app.post('/api/orders', async (req, res) => {
 // Helper function to create valid order data with consents
 const createOrderWithConsents = (overrides = {}) => ({
   customer_name: 'Тестовый Пользователь',
-  customer_phone: '+7 (999) 123-45-67',
+  customer_phone: '+7 (999) 063-11-11',
   customer_email: 'test@example.com',
   items: [
     { id: 1, name: 'Тестовое блюдо 1', price: 500, quantity: 2 },
